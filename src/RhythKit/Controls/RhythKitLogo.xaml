@@ -1,0 +1,35 @@
+<UserControl x:Class="RhythKit.Controls.RhythKitLogo"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Ellipse Width="190" Height="100" Margin="-40,-15,-40,-15">
+            <Ellipse.Fill>
+                <RadialGradientBrush>
+                    <GradientStop Color="#33799DFA" Offset="0"/>
+                    <GradientStop Color="#00799DFA" Offset="1"/>
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <Canvas Width="96" Height="42" Margin="0,0,12,0" VerticalAlignment="Center">
+                <Rectangle Width="40" Height="40" RadiusX="9" RadiusY="9"
+                           Stroke="#799DFA" StrokeThickness="3" Canvas.Left="0" Canvas.Top="0"/>
+                <Path Stroke="#7A9EFA" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                      Data="M 46,10 C 52,16 58,20 64,24" Canvas.Left="0" Canvas.Top="0"/>
+                <Path Stroke="#799DFA" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                      Data="M 64,24 C 70,20 76,16 82,10" Canvas.Left="0" Canvas.Top="0"/>
+                <Ellipse Width="6" Height="6" Fill="#9DB4FD" Canvas.Left="84" Canvas.Top="2"/>
+                <Ellipse Width="8" Height="8" Fill="#799DFA" Canvas.Left="78" Canvas.Top="14"/>
+                <Ellipse Width="5" Height="5" Fill="#8FAEFC" Canvas.Left="72" Canvas.Top="6"/>
+            </Canvas>
+
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Rhyth" FontSize="20" FontWeight="Bold"
+                           Foreground="#F2F4F8" VerticalAlignment="Center"/>
+                <TextBlock Text="Kit" FontSize="20" FontWeight="Bold"
+                           Foreground="#799DFA" VerticalAlignment="Center"/>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</UserControl>

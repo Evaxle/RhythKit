@@ -1,0 +1,44 @@
+<UserControl x:Class="RhythKit.Controls.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="0,0,24,0" MaxWidth="640" HorizontalAlignment="Left">
+            <TextBlock Text="Settings" Style="{StaticResource H1Text}"/>
+            <TextBlock Text="Configure RhythKit preferences" Style="{StaticResource MutedText}" Margin="0,4,0,20"/>
+
+            <Border Style="{StaticResource CardPanel}" Padding="20,16" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="Colorsets Folder" Style="{StaticResource H2Text}"/>
+                    <TextBlock Text="Default location where colorsets are saved" Style="{StaticResource MutedText}" Margin="0,3,0,16"/>
+
+                    <TextBlock Text="Default Save Path" Style="{StaticResource LabelText}" Margin="0,0,0,6"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Style="{StaticResource AppTextBox}"
+                                 Text="{Binding ColorsetsPath, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Content="Browse"
+                                Command="{Binding BrowseCommand}" Margin="8,0,0,0" Padding="12,8"/>
+                    </Grid>
+
+                    <Button Style="{StaticResource PrimaryButton}" Content="Save Settings"
+                            Command="{Binding SaveCommand}" HorizontalAlignment="Left" Margin="0,20,0,0"
+                            HorizontalContentAlignment="Center"/>
+
+                    <TextBlock Text="{Binding Status}" Style="{StaticResource BodyText}" Margin="0,12,0,0"
+                               Foreground="{StaticResource SuccessBrush}"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardPanel}" Padding="20,16" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="About" Style="{StaticResource H2Text}"/>
+                    <TextBlock Text="RhythKit Toolkit v1.0 - The best external kit for Rhythia" Style="{StaticResource MutedText}" Margin="0,6,0,0"/>
+                    <TextBlock Text="Colorset files are saved as .txt with one hex color per row." Style="{StaticResource MutedText}" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
