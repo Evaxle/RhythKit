@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("RhythKit - The best external toolkit for Rhythia")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+68561cbe60571eaf2e7d926007fedf6195860f27")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+515993c7396ad1bb460107ff56b6766c2f05b244")]
 [assembly: System.Reflection.AssemblyProductAttribute("RhythKit")]
 [assembly: System.Reflection.AssemblyTitleAttribute("RhythKit")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
