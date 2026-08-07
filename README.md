@@ -18,14 +18,6 @@ RhythKit is a modern WPF (Windows Presentation Foundation) desktop application w
   - Recent colorsets history panel — click to load a previously saved colorset
 
 - ⚙️ **Settings** — Configure the default colorsets folder, persisted to `RhythKit_Settings.ini`
-
-- ✨ **Modern UI & Animations**
-  - Custom frameless window with rounded corners and drop shadow
-  - Dark theme with the RhythKit brand accent color (`#799DFA`)
-  - Animated page transitions (fade + slide)
-  - Hover animations on buttons, swatches, and interactive elements
-  - Custom-drawn **RhythKit logo** (same icon as `logo.png`, rebranded to RhythKit)
-
 ## Requirements
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) (or newer)
