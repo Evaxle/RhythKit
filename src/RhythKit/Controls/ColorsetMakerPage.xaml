@@ -13,14 +13,13 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Grid>
-                            <Border x:Name="main" CornerRadius="8" Background="{Binding ColorBrush}"
-                                    BorderBrush="#00000000" BorderThickness="0">
+                            <Border x:Name="main" CornerRadius="8" Background="{Binding ColorBrush}">
                                 <Border.Effect>
                                     <DropShadowEffect BlurRadius="6" ShadowDepth="1" Opacity="0.4" Color="Black"/>
                                 </Border.Effect>
                             </Border>
-                            <Border x:Name="sel" CornerRadius="8" BorderBrush="#799DFA" BorderThickness="2.5"
-                                    Visibility="Collapsed" Margin="-1"/>
+                            <Border x:Name="sel" CornerRadius="8" BorderBrush="{StaticResource AccentBrush}"
+                                    BorderThickness="2.5" Visibility="Collapsed" Margin="-1"/>
                         </Grid>
                         <ControlTemplate.Triggers>
                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
@@ -46,8 +45,10 @@
             <ColumnDefinition Width="300"/>
         </Grid.ColumnDefinitions>
 
-        <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="0,0,24,0">
+                <Image Source="/Assets/logo.png" Width="110" Height="34" Stretch="Uniform"
+                       HorizontalAlignment="Left" Margin="0,0,0,6"/>
                 <TextBlock Text="Colorset Maker" Style="{StaticResource H1Text}"/>
                 <TextBlock Text="Create custom note colorsets for Rhythia" Style="{StaticResource MutedText}" Margin="0,4,0,20"/>
 
@@ -71,7 +72,7 @@
                     <StackPanel>
                         <TextBlock Text="Color Swatches" Style="{StaticResource H2Text}"/>
                         <TextBlock Text="Click a swatch to select it, then pick a color on the wheel" Style="{StaticResource MutedText}" Margin="0,3,0,14"/>
-                        <ItemsControl ItemsSource="{Binding Colors}" Name="SwatchGrid">
+                        <ItemsControl ItemsSource="{Binding Colors}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <WrapPanel/>
@@ -79,9 +80,7 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Button Style="{StaticResource SwatchButton}"
-                                            Tag="{Binding IsSelected}"
-                                            Click="Swatch_Click">
+                                    <Button Style="{StaticResource SwatchButton}" Click="Swatch_Click">
                                         <Button.ToolTip>
                                             <TextBlock Text="{Binding Hex}"/>
                                         </Button.ToolTip>
@@ -101,7 +100,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Hue Wheel" Style="{StaticResource H2Text}"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <Rectangle Width="18" Height="18" RadiusX="4" RadiusY="4" Fill="{Binding WheelColorBrush}" Stroke="#00000000" StrokeThickness="1" Margin="0,0,8,0"/>
+                                <Rectangle Width="18" Height="18" RadiusX="4" RadiusY="4" Fill="{Binding WheelColorBrush}" Margin="0,0,8,0"/>
                                 <TextBlock Text="{Binding WheelHex}" Style="{StaticResource BodyText}" FontWeight="SemiBold"/>
                             </StackPanel>
                         </Grid>
@@ -135,16 +134,7 @@
 
                         <Button Style="{StaticResource PrimaryButton}" Content="Download Colorset"
                                 Command="{Binding DownloadCommand}" HorizontalAlignment="Left" Margin="0,18,0,0"
-                                HorizontalContentAlignment="Center">
-                            <Button.ContentTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" FontSize="14"/>
-                                        <TextBlock Text="Download Colorset" FontSize="14"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </Button.ContentTemplate>
-                        </Button>
+                                HorizontalContentAlignment="Center"/>
 
                         <TextBlock Text="{Binding Status}" Style="{StaticResource BodyText}" Margin="0,12,0,0"
                                    Foreground="{StaticResource AccentBrush}"/>
@@ -153,7 +143,7 @@
             </StackPanel>
         </ScrollViewer>
 
-        <Border Grid.Column="1" Style="{StaticResource CardPanel}" Padding="16" Margin="0,0,0,0">
+        <Border Grid.Column="1" Style="{StaticResource CardPanel}" Padding="16">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="Recent Colorsets" Style="{StaticResource H2Text}" Margin="0,0,0,4"/>
                 <TextBlock DockPanel.Dock="Top" Text="Click a saved colorset to load its colors" Style="{StaticResource MutedText}" Margin="0,0,0,14"/>
@@ -166,31 +156,7 @@
                          Background="Transparent" BorderThickness="0"
                          ScrollViewer.VerticalScrollBarVisibility="Auto">
                     <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
-                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
-                            <Setter Property="Padding" Value="8,8"/>
-                            <Setter Property="Margin" Value="0,2"/>
-                            <Setter Property="Cursor" Value="Hand"/>
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ListBoxItem">
-                                        <Border x:Name="bd" CornerRadius="6" Background="Transparent" Padding="10,8">
-                                            <TextBlock Text="{Binding}" FontSize="12"
-                                                       TextTrimming="CharacterEllipsis"/>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="bd" Property="Background" Value="{StaticResource CardBrush}"/>
-                                            </Trigger>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="bd" Property="Background" Value="{StaticResource CardHoverBrush}"/>
-                                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource HistoryListItem}"/>
                     </ListBox.ItemContainerStyle>
                 </ListBox>
             </DockPanel>

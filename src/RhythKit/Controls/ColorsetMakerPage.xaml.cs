@@ -14,9 +14,8 @@ public partial class ColorsetMakerPage : UserControl
 
     private void Swatch_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is not ColorsetMakerViewModel vm)
-            return;
-        if (sender is Button btn && btn.DataContext is ColorItem item)
+        if (DataContext is ColorsetMakerViewModel vm &&
+            sender is Button { DataContext: ColorItem item })
         {
             vm.SelectedItem = item;
         }

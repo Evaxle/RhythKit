@@ -9,7 +9,6 @@ public partial class App : Application
     {
         base.OnStartup(e);
         var defaultDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "colorsets");
-        if (!Directory.Exists(defaultDir))
-            Directory.CreateDirectory(defaultDir);
+        Directory.CreateDirectory(defaultDir);
     }
 }

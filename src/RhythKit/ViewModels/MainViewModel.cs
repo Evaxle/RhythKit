@@ -1,4 +1,3 @@
-using System.Windows.Media;
 using RhythKit.Services;
 
 namespace RhythKit.ViewModels;

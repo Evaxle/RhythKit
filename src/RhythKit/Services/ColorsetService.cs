@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Windows.Media;
 using RhythKit.Models;
@@ -10,6 +11,7 @@ public class ColorsetService
     {
         if (string.IsNullOrWhiteSpace(directory))
             throw new ArgumentException("Save directory is required.");
+
         if (string.IsNullOrWhiteSpace(name))
             name = $"colorset_{DateTime.Now:yyyyMMdd_HHmmss}";
 
@@ -37,12 +39,10 @@ public class ColorsetService
                 continue;
             if (trimmed.StartsWith("#"))
                 trimmed = trimmed.Substring(1);
-            if (trimmed.Length == 6 && byte.TryParse(trimmed.Substring(0, 2),
-                    System.Globalization.NumberStyles.HexNumber, null, out var r) &&
-                byte.TryParse(trimmed.Substring(2, 2),
-                    System.Globalization.NumberStyles.HexNumber, null, out var g) &&
-                byte.TryParse(trimmed.Substring(4, 2),
-                    System.Globalization.NumberStyles.HexNumber, null, out var b))
+            if (trimmed.Length == 6 &&
+                byte.TryParse(trimmed.Substring(0, 2), NumberStyles.HexNumber, null, out var r) &&
+                byte.TryParse(trimmed.Substring(2, 2), NumberStyles.HexNumber, null, out var g) &&
+                byte.TryParse(trimmed.Substring(4, 2), NumberStyles.HexNumber, null, out var b))
             {
                 result.Add(Color.FromRgb(r, g, b));
             }

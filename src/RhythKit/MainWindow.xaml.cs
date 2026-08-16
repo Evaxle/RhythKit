@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Media.Animation;
 using RhythKit.ViewModels;
 
@@ -29,18 +28,10 @@ public partial class MainWindow : Window
         {
             From = 0,
             To = 1,
-            Duration = TimeSpan.FromMilliseconds(350),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        var slide = new DoubleAnimation
-        {
-            From = 16,
-            To = 0,
-            Duration = TimeSpan.FromMilliseconds(350),
+            Duration = TimeSpan.FromMilliseconds(250),
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
         ContentHost.BeginAnimation(OpacityProperty, fade);
-        (ContentHost.RenderTransform as TranslateTransform)?.BeginAnimation(TranslateTransform.YProperty, slide);
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -61,15 +52,7 @@ public partial class MainWindow : Window
 
     private void ToggleMaximize()
     {
-        if (_isMaximized)
-        {
-            WindowState = WindowState.Normal;
-            _isMaximized = false;
-        }
-        else
-        {
-            WindowState = WindowState.Maximized;
-            _isMaximized = true;
-        }
+        WindowState = _isMaximized ? WindowState.Normal : WindowState.Maximized;
+        _isMaximized = !_isMaximized;
     }
 }

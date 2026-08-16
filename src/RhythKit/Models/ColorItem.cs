@@ -7,12 +7,13 @@ namespace RhythKit.Models;
 public class ColorItem : INotifyPropertyChanged
 {
     private Color _color = Colors.White;
+    private bool _isSelected;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public int Index { get; set; }
 
-public Color Color
+    public Color Color
     {
         get => _color;
         set
@@ -27,14 +28,9 @@ public Color Color
         }
     }
 
-    public string Hex
-    {
-        get => $"#{_color.R:X2}{_color.G:X2}{_color.B:X2}";
-    }
+    public string Hex => $"#{_color.R:X2}{_color.G:X2}{_color.B:X2}";
 
     public SolidColorBrush ColorBrush => new(_color);
-
-    private bool _isSelected;
 
     public bool IsSelected
     {

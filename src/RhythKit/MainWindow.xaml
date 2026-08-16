@@ -29,6 +29,7 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
+            <!-- Title bar -->
             <Border Grid.Row="0" Background="{StaticResource BgAltBrush}" CornerRadius="14,14,0,0"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                 <Grid x:Name="TitleBar" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
@@ -36,9 +37,9 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <StackPanel Orientation="Horizontal" Margin="16,8,0,8">
-                        <controls:RhythKitLogo Width="200" Height="44"/>
-                    </StackPanel>
+                    <Image Grid.Column="0" Source="/Assets/logo.png" Width="200" Height="44"
+                           Margin="16,6,0,6" Stretch="Uniform"
+                           VerticalAlignment="Center" HorizontalAlignment="Left"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
                         <Button x:Name="MinimizeBtn" Style="{StaticResource WindowControlBtn}" Content="&#xE921;" Click="MinimizeBtn_Click"/>
                         <Button x:Name="MaximizeBtn" Style="{StaticResource WindowControlBtn}" Content="&#xE922;" Click="MaximizeBtn_Click"/>
@@ -53,24 +54,25 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
+                <!-- Sidebar -->
                 <Border Grid.Column="0" Background="{StaticResource BgAltBrush}"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
                     <DockPanel Margin="12,20,12,16">
                         <TextBlock DockPanel.Dock="Top" Text="TOOLKIT" Style="{StaticResource MutedText}"
                                    Margin="12,0,0,12" FontSize="11"/>
                         <Button DockPanel.Dock="Top" Style="{StaticResource NavButton}" Command="{Binding GoToColorsetCommand}"
-                                Tag="🎨" Content="Colorset Maker" Margin="0,0,0,6"/>
+                                Tag="&#xE790;" Content="Colorset Maker" Margin="0,0,0,6"/>
                         <Button DockPanel.Dock="Top" Style="{StaticResource NavButton}" Command="{Binding GoToSettingsCommand}"
-                                Tag="⚙️" Content="Settings" Margin="0,0,0,6"/>
+                                Tag="&#xE713;" Content="Settings" Margin="0,0,0,6"/>
 
                         <TextBlock DockPanel.Dock="Bottom" Text="RhythKit Toolkit" Style="{StaticResource MutedText}"
                                    HorizontalAlignment="Center" Margin="0,16,0,0" FontSize="11"/>
                     </DockPanel>
                 </Border>
 
+                <!-- Content -->
                 <Grid Grid.Column="1">
-                    <Grid x:Name="ContentHost" Margin="24"
-                          RenderTransformOrigin="0.5,0.5">
+                    <Grid x:Name="ContentHost" Margin="24">
                         <Grid.RenderTransform>
                             <TranslateTransform/>
                         </Grid.RenderTransform>

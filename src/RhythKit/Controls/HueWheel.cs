@@ -23,21 +23,10 @@ public class HueWheel : ContentControl
 
     private const double WheelSize = 220;
     private const double Radius = 100;
-    private WriteableBitmap? _wheelBitmap;
     private readonly Image _wheelImage;
     private readonly Ellipse _cursor;
     private readonly Canvas _root;
     private bool _isDragging;
-
-    public static readonly DependencyProperty UseVProperty =
-        DependencyProperty.Register(nameof(UseV), typeof(bool), typeof(HueWheel),
-            new PropertyMetadata(false));
-
-    public bool UseV
-    {
-        get => (bool)GetValue(UseVProperty);
-        set => SetValue(UseVProperty, value);
-    }
 
     public HueWheel()
     {
@@ -50,7 +39,7 @@ public class HueWheel : ContentControl
         {
             Width = 14,
             Height = 14,
-            Stroke = new SolidColorBrush(Color.FromArgb(255, 255, 255, 255)),
+            Stroke = new SolidColorBrush(Colors.White),
             StrokeThickness = 2.5,
             Fill = new SolidColorBrush(Colors.Transparent),
             IsHitTestVisible = false
@@ -65,25 +54,22 @@ public class HueWheel : ContentControl
         MouseLeftButtonDown += OnWheelMouseDown;
         MouseMove += OnWheelMouseMove;
         MouseLeftButtonUp += OnWheelMouseUp;
-        SizeChanged += (_, _) => { RenderWheel(); UpdateCursorPosition(); };
     }
 
     private Point WheelCenter => new(WheelSize / 2, WheelSize / 2);
 
     private void RenderWheel()
     {
-        _wheelBitmap = new WriteableBitmap((int)WheelSize, (int)WheelSize, 96, 96,
+        var bitmap = new WriteableBitmap((int)WheelSize, (int)WheelSize, 96, 96,
             PixelFormats.Pbgra32, null);
-        _wheelImage.Source = _wheelBitmap;
+        _wheelImage.Source = bitmap;
 
         int w = (int)WheelSize;
         int h = (int)WheelSize;
-        int stride = w * 4;
         var pixels = new byte[w * h * 4];
 
         double cx = WheelSize / 2;
         double cy = WheelSize / 2;
-        double maxR = Radius;
 
         for (int y = 0; y < h; y++)
         {
@@ -94,26 +80,16 @@ public class HueWheel : ContentControl
                 double dist = Math.Sqrt(dx * dx + dy * dy);
                 int idx = (y * w + x) * 4;
 
-                if (dist > maxR)
+                if (dist > Radius)
                 {
                     pixels[idx + 3] = 0;
                     continue;
                 }
 
-                if (dist < 3)
-                {
-                    pixels[idx] = 255;
-                    pixels[idx + 1] = 255;
-                    pixels[idx + 2] = 255;
-                    pixels[idx + 3] = 255;
-                    continue;
-                }
-
                 double angle = Math.Atan2(dy, dx) * 180 / Math.PI;
                 if (angle < 0) angle += 360;
-                double hue = angle;
-                double sat = dist / maxR;
-                var color = ColorMath.FromHsv(hue, sat, 1.0);
+                double sat = dist / Radius;
+                var color = ColorMath.FromHsv(angle, sat, 1.0);
 
                 pixels[idx] = color.B;
                 pixels[idx + 1] = color.G;
@@ -122,7 +98,7 @@ public class HueWheel : ContentControl
             }
         }
 
-        _wheelBitmap.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+        bitmap.WritePixels(new Int32Rect(0, 0, w, h), pixels, w * 4, 0);
     }
 
     private void OnWheelMouseDown(object sender, MouseButtonEventArgs e)
@@ -152,11 +128,11 @@ public class HueWheel : ContentControl
         double dist = Math.Sqrt(dx * dx + dy * dy);
         if (dist > Radius)
             dist = Radius;
+
         double angle = Math.Atan2(dy, dx) * 180 / Math.PI;
         if (angle < 0) angle += 360;
-        double hue = angle;
-        double sat = dist / Radius;
-        SelectedColor = ColorMath.FromHsv(hue, sat, 1.0);
+
+        SelectedColor = ColorMath.FromHsv(angle, dist / Radius, 1.0);
         UpdateCursorPosition();
     }
 

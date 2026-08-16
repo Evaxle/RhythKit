@@ -1,5 +1,5 @@
 ﻿RhythKit
-1.0.0.0
+
 
 winexe
 C#
@@ -10,11 +10,11 @@ none
 false
 TRACE;DEBUG;NET;NET8_0;NETCOREAPP;WINDOWS;WINDOWS7_0;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER;WINDOWS7_0_OR_GREATER
 /workspaces/RhythKit/src/RhythKit/App.xaml
-5-116699688
+4705081908
 
-18-114199192
+15500011566
 198-254742838
-Controls/ColorsetMakerPage.xaml;Controls/RhythKitLogo.xaml;Controls/SettingsPage.xaml;MainWindow.xaml;Themes/Theme.xaml;
+Controls/ColorsetMakerPage.xaml;Controls/SettingsPage.xaml;MainWindow.xaml;Themes/Theme.xaml;
 
-True
+False
 

@@ -33,8 +33,7 @@ public class SettingsService
             return fallback;
         try
         {
-            var lines = File.ReadAllLines(_configPath);
-            foreach (var line in lines)
+            foreach (var line in File.ReadAllLines(_configPath))
             {
                 var trimmed = line.Trim();
                 if (trimmed.StartsWith(";") || trimmed.StartsWith("#"))
