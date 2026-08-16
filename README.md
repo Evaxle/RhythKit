@@ -17,7 +17,29 @@ RhythKit is a modern WPF (Windows Presentation Foundation) desktop application w
   - Browse to a folder with the native folder picker
   - Recent colorsets history panel — click to load a previously saved colorset
 
-- ⚙️ **Settings** — Configure the default colorsets folder, persisted to `RhythKit_Settings.ini`
+- 💬 **Online Messaging** — Chat and share files with other Rhythia players
+  - On first launch you paste your **Rhythia profile URL** (e.g. `https://www.rhythia.com/player/7564`) and RhythKit resolves your username automatically (that profile ID belongs to *evaxle*)
+  - **Search Rhythia users** by name and send/accept/decline friend requests
+  - Mutual friends (you added them *and* they added you) are **prioritized at the top** of your messages list
+  - **1-on-1 DMs and group chats** with multiple users
+  - Send **text messages and files** of any type (`.txt`, `.sspm`, `.phxm`, …) with upload/download and per-message delete
+  - Live updates via background polling against the RhythKit server
+
+- ⚙️ **Settings** — Configure the default colorsets folder, your Rhythia profile, and the RhythKit server URL, persisted to `RhythKit_Settings.ini`
+
+## Running the RhythKit server
+
+Messaging needs the bundled `RhythKitServer` (ASP.NET Core + SQLite) running somewhere reachable by everyone who wants to chat:
+
+```bash
+# Run the server (listens on http://0.0.0.0:5210 by default)
+dotnet run --project src/RhythKitServer/RhythKitServer.csproj
+
+# Or pick a different address/port
+dotnet run --project src/RhythKitServer/RhythKitServer.csproj --urls "http://0.0.0.0:9000"
+```
+
+Data is stored in a `data/` folder next to the server (SQLite database + uploaded files). Every user of RhythKit must point their **Settings → RhythKit Server URL** at the same server. The default is `http://localhost:5210`.
 ## Requirements
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) (or newer)
@@ -60,15 +82,23 @@ src/RhythKit/
 ├── Controls/
 │   ├── ColorsetMakerPage.xaml    # Main colorset UI
 │   ├── SettingsPage.xaml         # Settings UI
+│   ├── MessagesPage.xaml         # Online messages / chat UI
 │   ├── HueWheel.cs               # Interactive hue wheel control
 │   └── RhythKitLogo.xaml         # Custom-drawn logo
-├── Models/ColorItem.cs           # Color swatch model
+├── Windows/
+│   ├── ProfileSetupWindow.xaml   # First-launch Rhythia profile setup
+│   └── ContactPickerWindow.xaml  # Pick contacts for groups / adding members
+├── Models/                       # ColorItem, ChatUser, Conversation, ChatMessage, ...
 ├── Services/
 │   ├── ColorsetService.cs        # Save/load colorsets
 │   ├── SettingsService.cs        # Persist settings
-│   └── ColorMath.cs              # HSV/HSL conversions
+│   ├── ColorMath.cs              # HSV/HSL conversions
+│   ├── RhythiaApiService.cs      # Rhythia profile lookup + user search
+│   └── RhythKitApiService.cs     # Client for the RhythKitServer API
 ├── Themes/Theme.xaml             # Dark theme + styles
 └── ViewModels/                   # MVVM view models
+src/RhythKitServer/               # ASP.NET Core server (messaging, friends, files)
+└── Program.cs / Store.cs / Models.cs
 ```
 
 ## License

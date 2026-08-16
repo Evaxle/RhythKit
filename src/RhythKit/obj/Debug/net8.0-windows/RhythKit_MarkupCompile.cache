@@ -10,11 +10,11 @@ none
 false
 TRACE;DEBUG;NET;NET8_0;NETCOREAPP;WINDOWS;WINDOWS7_0;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER;WINDOWS7_0_OR_GREATER
 /workspaces/RhythKit/src/RhythKit/App.xaml
-4705081908
+7372521422
 
-15500011566
+27-547716057
 198-254742838
-Controls/ColorsetMakerPage.xaml;Controls/SettingsPage.xaml;MainWindow.xaml;Themes/Theme.xaml;
+Controls/ColorsetMakerPage.xaml;Controls/MessagesPage.xaml;Controls/SettingsPage.xaml;MainWindow.xaml;Themes/Theme.xaml;Windows/ContactPickerWindow.xaml;Windows/ProfileSetupWindow.xaml;
 
 False
 

@@ -34,6 +34,39 @@
                 </StackPanel>
             </Border>
 
+            <Border Style="{StaticResource CardPanel}" Padding="20,16" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="Profile &amp; Online" Style="{StaticResource H2Text}"/>
+                    <TextBlock Text="Your Rhythia identity and the RhythKit server you connect to for messages." Style="{StaticResource MutedText}" Margin="0,3,0,16"/>
+
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Width="46" Height="46" CornerRadius="23" Background="{StaticResource AccentBrush}"
+                                VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Initials}" FontSize="16" FontWeight="Bold" Foreground="#0D0F14"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Username}" Style="{StaticResource BodyText}"
+                                       Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding ProfileId}" Style="{StaticResource MutedText}" FontSize="12"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <Button Style="{StaticResource SecondaryButton}" Content="Change Profile"
+                            Command="{Binding ChangeProfileCommand}" HorizontalAlignment="Left" Padding="14,8"/>
+
+                    <TextBlock Text="RhythKit Server URL" Style="{StaticResource LabelText}" Margin="0,18,0,6"/>
+                    <TextBox Style="{StaticResource AppTextBox}"
+                             Text="{Binding ServerUrl, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Text="The online chat server. Everyone who wants to chat with you must use the same server URL."
+                               Style="{StaticResource MutedText}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
+
             <Border Style="{StaticResource CardPanel}" Padding="20,16">
                 <StackPanel>
                     <TextBlock Text="About" Style="{StaticResource H2Text}"/>

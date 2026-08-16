@@ -7,6 +7,13 @@ public class SettingsService
     private readonly string _configPath;
 
     public string ColorsetsPath { get; private set; }
+    public int? PlayerId { get; private set; }
+    public string Username { get; private set; } = "";
+    public string AvatarUrl { get; private set; } = "";
+    public string ServerUrl { get; private set; } = "http://localhost:5210";
+    public string ServerToken { get; private set; } = "";
+
+    public bool HasProfile => PlayerId.HasValue && PlayerId.Value > 0;
 
     public SettingsService()
     {
@@ -16,6 +23,52 @@ public class SettingsService
         if (string.IsNullOrWhiteSpace(ColorsetsPath))
             ColorsetsPath = defaultPath;
         Directory.CreateDirectory(ColorsetsPath);
+
+        var playerId = LoadSetting("player_id", "");
+        if (int.TryParse(playerId, out var id) && id > 0)
+            PlayerId = id;
+        Username = LoadSetting("username", "");
+        AvatarUrl = LoadSetting("avatar_url", "");
+        var serverUrl = LoadSetting("server_url", "");
+        if (!string.IsNullOrWhiteSpace(serverUrl))
+            ServerUrl = serverUrl.TrimEnd('/');
+        ServerToken = LoadSetting("server_token", "");
+    }
+
+    public void SaveProfile(int playerId, string username, string? avatarUrl)
+    {
+        PlayerId = playerId;
+        Username = username;
+        AvatarUrl = avatarUrl ?? "";
+        SaveSetting("player_id", playerId.ToString());
+        SaveSetting("username", username);
+        SaveSetting("avatar_url", AvatarUrl);
+    }
+
+    public void SaveServer(string serverUrl, string token)
+    {
+        ServerUrl = serverUrl.TrimEnd('/');
+        ServerToken = token;
+        SaveSetting("server_url", ServerUrl);
+        SaveSetting("server_token", token);
+    }
+
+    public void SaveServerUrl(string serverUrl)
+    {
+        ServerUrl = serverUrl.TrimEnd('/');
+        SaveSetting("server_url", ServerUrl);
+    }
+
+    public void ClearProfile()
+    {
+        PlayerId = null;
+        Username = "";
+        AvatarUrl = "";
+        ServerToken = "";
+        SaveSetting("player_id", "");
+        SaveSetting("username", "");
+        SaveSetting("avatar_url", "");
+        SaveSetting("server_token", "");
     }
 
     public void SaveColorsetsPath(string path)

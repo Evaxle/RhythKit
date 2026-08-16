@@ -1,21 +1,35 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
+using RhythKit.Services;
 using RhythKit.ViewModels;
+using RhythKit.Windows;
 
 namespace RhythKit;
 
 public partial class MainWindow : Window
 {
-    private readonly MainViewModel _viewModel;
+    private readonly MainViewModel? _viewModel;
     private bool _isMaximized;
 
     public MainWindow()
     {
         InitializeComponent();
-        _viewModel = new MainViewModel();
+
+        var settings = new SettingsService();
+        if (!settings.HasProfile)
+        {
+            var setup = new ProfileSetupWindow(settings);
+            if (setup.ShowDialog() != true)
+            {
+                Application.Current.Shutdown();
+                return;
+            }
+        }
+
+        _viewModel = new MainViewModel(settings);
         DataContext = _viewModel;
-        _viewModel.PropertyChanged += (_, e) =>
+        _viewModel!.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(MainViewModel.CurrentPage))
                 AnimatePageTransition();

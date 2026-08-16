@@ -26,3 +26,9 @@
 /workspaces/RhythKit/src/RhythKit/obj/Debug/net8.0-windows/RhythKit.pdb
 /workspaces/RhythKit/src/RhythKit/obj/Debug/net8.0-windows/RhythKit.genruntimeconfig.cache
 /workspaces/RhythKit/src/RhythKit/obj/Debug/net8.0-windows/ref/RhythKit.dll
+/workspaces/RhythKit/src/RhythKit/obj/Debug/net8.0-windows/Windows/ContactPickerWindow.baml
+/workspaces/RhythKit/src/RhythKit/obj/Debug/net8.0-windows/Windows/ProfileSetupWindow.baml
+/workspaces/RhythKit/src/RhythKit/obj/Debug/net8.0-windows/Windows/ContactPickerWindow.g.cs
+/workspaces/RhythKit/src/RhythKit/obj/Debug/net8.0-windows/Windows/ProfileSetupWindow.g.cs
+/workspaces/RhythKit/src/RhythKit/obj/Debug/net8.0-windows/Controls/MessagesPage.g.cs
+/workspaces/RhythKit/src/RhythKit/obj/Debug/net8.0-windows/Controls/MessagesPage.baml
