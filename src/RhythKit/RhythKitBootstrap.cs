@@ -86,13 +86,13 @@ public static class RhythKitBootstrap
             if (attempt == null || GetBool(attempt, "IsReplay") || !GetBool(attempt, "Alive") || !GetBool(attempt, "Qualifies")) return;
 
             var map = GetValue(attempt, "Map");
-            var mapId = GetString(map, "Name");
-            if (string.IsNullOrWhiteSpace(mapId)) return;
+            var rhythiaMapId = GetString(map, "Name");
+            if (string.IsNullOrWhiteSpace(rhythiaMapId)) return;
 
-            var mapCheck = await new RhythiansApi(new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") }).CheckMapAsync(token, mapId);
+            var mapCheck = await new RhythiansApi(new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") }).CheckMapAsync(token, rhythiaMapId);
             if (mapCheck == null || !mapCheck.Eligible) return;
 
-            var score = new ScoreSubmission(mapId, GetString(attempt, "ID") ?? Guid.NewGuid().ToString("N"), GetNullableDouble(attempt, "Accuracy"), GetNullableInt(attempt, "Misses"), GetNullableDouble(attempt, "Speed"));
+            var score = new ScoreSubmission(mapCheck.Id, GetString(attempt, "ID") ?? Guid.NewGuid().ToString("N"), GetNullableDouble(attempt, "Accuracy"), GetNullableInt(attempt, "Misses"), GetNullableDouble(attempt, "Speed"));
             await client.SubmitScoreAsync(token, score);
         }
         catch (Exception exception)
