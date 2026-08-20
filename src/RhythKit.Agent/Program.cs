@@ -1,9 +1,10 @@
-using System.Net;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://127.0.0.1:45872");
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.SetIsOriginAllowed(origin => origin.StartsWith("https://rhythians.vercel.app", StringComparison.OrdinalIgnoreCase) || origin.StartsWith("https://rhythians.com", StringComparison.OrdinalIgnoreCase)).AllowAnyHeader().AllowAnyMethod()));
 var app = builder.Build();
+app.UseCors();
 
 app.MapGet("/status", () =>
 {
@@ -14,12 +15,12 @@ app.MapGet("/status", () =>
 app.MapPost("/game", async (HttpRequest request) =>
 {
     var body = await JsonSerializer.DeserializeAsync<GameState>(request.Body);
-    if (body == null) return Results.BadRequest();
+    if (body == null || string.IsNullOrWhiteSpace(body.Game)) return Results.BadRequest();
     TokenStore.SaveGame(body.Game);
     return Results.Ok(new { ok = true });
 });
 
-app.MapPost("/score", async (HttpRequest request, HttpResponse response) =>
+app.MapPost("/score", async (HttpRequest request) =>
 {
     var body = await JsonSerializer.DeserializeAsync<ScoreRequest>(request.Body);
     var state = TokenStore.Load();
