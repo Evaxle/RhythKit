@@ -9,7 +9,6 @@ public static class RhythiaPatcher
     {
         var assemblyPath = FindRhythiaAssembly(gameDirectory);
         var backupPath = assemblyPath + ".rhythkit-backup";
-
         if (!File.Exists(backupPath)) File.Copy(assemblyPath, backupPath);
 
         using var assembly = AssemblyDefinition.ReadAssembly(assemblyPath, new ReaderParameters { ReadWrite = false });
@@ -27,11 +26,17 @@ public static class RhythiaPatcher
         return assemblyPath;
     }
 
+    public static bool IsPatched(string assemblyPath)
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(assemblyPath, new ReaderParameters { ReadWrite = false });
+        var method = assembly.MainModule.Types.FirstOrDefault(x => x.FullName == "Rhythia")?.Methods.FirstOrDefault(x => x.Name == "_Ready");
+        return method?.Body.Instructions.Any(x => x.Operand is MethodReference reference && reference.FullName.Contains("RhythKit.RhythKitBootstrap::Initialize", StringComparison.Ordinal)) == true;
+    }
+
     public static string FindRhythiaAssembly(string gameDirectory)
     {
         var direct = Path.Combine(gameDirectory, "Rhythia.dll");
         if (File.Exists(direct)) return direct;
-
         var matches = Directory.EnumerateFiles(gameDirectory, "Rhythia.dll", SearchOption.AllDirectories).ToArray();
         return matches.FirstOrDefault() ?? throw new FileNotFoundException("Rhythia.dll was not found in the selected game directory.");
     }
