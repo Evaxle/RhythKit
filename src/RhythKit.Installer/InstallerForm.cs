@@ -101,9 +101,13 @@ public sealed class InstallerForm : Form
             await File.WriteAllBytesAsync(Path.Combine(modDirectory, "RhythKit.dll"), payload);
 
             var agentSource = Path.Combine(AppContext.BaseDirectory, "RhythKit.Agent.exe");
+            var uninstallerSource = Path.Combine(AppContext.BaseDirectory, "RhythKit.Uninstaller.exe");
             if (!File.Exists(agentSource)) throw new FileNotFoundException("RhythKit.Agent.exe was not found beside the installer. Rebuild with build.ps1.");
+            if (!File.Exists(uninstallerSource)) throw new FileNotFoundException("RhythKit.Uninstaller.exe was not found beside the installer. Rebuild with build.ps1.");
             var agentPath = Path.Combine(modDirectory, "RhythKit.Agent.exe");
+            var uninstallerPath = Path.Combine(modDirectory, "RhythKit.Uninstaller.exe");
             File.Copy(agentSource, agentPath, true);
+            File.Copy(uninstallerSource, uninstallerPath, true);
 
             status.Text = target == RhythiaTarget.LegacyManaged ? "Installing legacy Rhythia integration..." : "Installing RhythKit integration...";
 
@@ -124,17 +128,18 @@ public sealed class InstallerForm : Form
             {
                 id = "rhythkit",
                 name = "RhythKit",
-                version = "0.4.0",
+                version = "0.5.0",
                 game = target.ToString(),
                 gameDirectory = path,
                 agentPath,
+                uninstallerPath,
                 assemblySha256 = hash,
                 installedAt = DateTimeOffset.UtcNow
             };
             await File.WriteAllTextAsync(Path.Combine(modDirectory, "manifest.json"), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
             InstallAgentStartup(agentPath, path, target);
             StartAgent(agentPath, path, target);
-            status.Text = $"RhythKit installed for {target}. Start the game to connect Rhythians.";
+            status.Text = $"RhythKit installed for {target}. Uninstaller added to {modDirectory}.";
         }
         catch (Exception ex)
         {
