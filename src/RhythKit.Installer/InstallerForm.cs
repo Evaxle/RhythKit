@@ -55,13 +55,14 @@ public sealed class InstallerForm : Form
         {
             status.Text = "Locating Rhythia.dll...";
             var assemblyPath = RhythiaPatcher.FindRhythiaAssembly(path);
+            var assemblyDirectory = Path.GetDirectoryName(assemblyPath)!;
             var modDirectory = Path.Combine(path, "RhythKit");
             Directory.CreateDirectory(modDirectory);
 
             var payload = RhythKitPayload.Data;
             if (payload.Length == 0) throw new InvalidOperationException("The installer was not built with the RhythKit payload. Run build.ps1.");
 
-            var modAssembly = Path.Combine(modDirectory, "RhythKit.dll");
+            var modAssembly = Path.Combine(assemblyDirectory, "RhythKit.dll");
             await File.WriteAllBytesAsync(modAssembly, payload);
             var hash = Convert.ToHexString(SHA256.HashData(payload));
 
@@ -97,7 +98,8 @@ public sealed class InstallerForm : Form
     private static void VerifyInstalled(string gameDirectory)
     {
         var assemblyPath = RhythiaPatcher.FindRhythiaAssembly(gameDirectory);
-        if (!File.Exists(Path.Combine(gameDirectory, "RhythKit", "RhythKit.dll"))) throw new InvalidOperationException("RhythKit.dll was not installed.");
+        var assemblyDirectory = Path.GetDirectoryName(assemblyPath)!;
+        if (!File.Exists(Path.Combine(assemblyDirectory, "RhythKit.dll"))) throw new InvalidOperationException("RhythKit.dll was not installed beside Rhythia.dll.");
         if (!RhythiaPatcher.IsPatched(assemblyPath)) throw new InvalidOperationException("Rhythia.dll was not patched successfully.");
     }
 }
