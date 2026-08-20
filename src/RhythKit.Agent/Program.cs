@@ -1,5 +1,9 @@
 using System.Text.Json;
 
+var gameDirectory = GetArgument("--game-dir");
+var gameType = GetArgument("--game-type") ?? "unknown";
+TokenStore.SaveGame(gameType);
+
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://127.0.0.1:45872");
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.SetIsOriginAllowed(origin => origin.StartsWith("https://rhythians.vercel.app", StringComparison.OrdinalIgnoreCase) || origin.StartsWith("https://rhythians.com", StringComparison.OrdinalIgnoreCase)).AllowAnyHeader().AllowAnyMethod()));
@@ -34,7 +38,7 @@ app.MapPost("/score", async (HttpRequest request) =>
 app.MapPost("/auth/start", async () =>
 {
     using var client = new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") };
-    var result = await client.PostAsJsonAsync("api/rhythkit/device/start", new { gameVersion = "rhythkit" });
+    var result = await client.PostAsJsonAsync("api/rhythkit/device/start", new { gameVersion = gameType });
     return Results.Content(await result.Content.ReadAsStringAsync(), "application/json", System.Text.Encoding.UTF8, (int)result.StatusCode);
 });
 
@@ -51,7 +55,18 @@ app.MapPost("/auth/poll", async (AuthPoll request) =>
     return Results.Content(json, "application/json", System.Text.Encoding.UTF8, (int)result.StatusCode);
 });
 
+var watcher = new RhythKit.Agent.SspScoreWatcher(gameDirectory, app.Lifetime.ApplicationStopping);
+if (gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)) _ = watcher.RunAsync();
+
 app.Run();
+
+static string? GetArgument(string name)
+{
+    var args = Environment.GetCommandLineArgs();
+    for (var i = 0; i < args.Length - 1; i++)
+        if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
+    return null;
+}
 
 record GameState(string Game);
 record ScoreRequest(string challengeMapId, string clientScoreId, double? accuracy, int? misses, double? speed);
