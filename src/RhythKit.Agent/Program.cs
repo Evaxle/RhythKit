@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Text.Json;
+using System.Windows.Forms;
 
 var gameDirectory = GetArgument("--game-dir");
 var gameType = GetArgument("--game-type") ?? "unknown";
@@ -35,17 +37,35 @@ app.MapPost("/score", async (HttpRequest request) =>
     return Results.Content(await result.Content.ReadAsStringAsync(), "application/json", System.Text.Encoding.UTF8, (int)result.StatusCode);
 });
 
-app.MapPost("/auth/start", async () =>
-{
-    using var client = new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") };
-    var result = await client.PostAsJsonAsync("api/rhythkit/device/start", new { gameVersion = gameType });
-    return Results.Content(await result.Content.ReadAsStringAsync(), "application/json", System.Text.Encoding.UTF8, (int)result.StatusCode);
-});
+app.MapPost("/auth/start", async () => await StartAuthorizationAsync(gameType));
 
 app.MapPost("/auth/poll", async (AuthPoll request) =>
 {
+    var result = await PollAuthorizationAsync(request.DeviceCode);
+    return result;
+});
+
+var watcher = new RhythKit.Agent.SspScoreWatcher(gameDirectory, app.Lifetime.ApplicationStopping);
+if (gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)) _ = watcher.RunAsync();
+_ = MonitorGameAsync(gameDirectory, gameType, app.Lifetime.ApplicationStopping);
+
+app.Run();
+
+static async Task<IResult> StartAuthorizationAsync(string gameType)
+{
     using var client = new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") };
-    var result = await client.PostAsJsonAsync("api/rhythkit/device/poll", request);
+    var result = await client.PostAsJsonAsync("api/rhythkit/device/start", new { gameVersion = gameType });
+    var json = await result.Content.ReadAsStringAsync();
+    if (!result.IsSuccessStatusCode) return Results.Content(json, "application/json", System.Text.Encoding.UTF8, (int)result.StatusCode);
+    var auth = JsonSerializer.Deserialize<AuthStartResponse>(json);
+    if (auth == null) return Results.Problem("Invalid authorization response.");
+    return Results.Json(auth);
+}
+
+static async Task<IResult> PollAuthorizationAsync(string deviceCode)
+{
+    using var client = new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") };
+    var result = await client.PostAsJsonAsync("api/rhythkit/device/poll", new { deviceCode });
     var json = await result.Content.ReadAsStringAsync();
     if (result.IsSuccessStatusCode)
     {
@@ -53,12 +73,76 @@ app.MapPost("/auth/poll", async (AuthPoll request) =>
         if (auth?.Status == "authorized" && !string.IsNullOrWhiteSpace(auth.Token)) TokenStore.Save(auth.Token);
     }
     return Results.Content(json, "application/json", System.Text.Encoding.UTF8, (int)result.StatusCode);
-});
+}
 
-var watcher = new RhythKit.Agent.SspScoreWatcher(gameDirectory, app.Lifetime.ApplicationStopping);
-if (gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)) _ = watcher.RunAsync();
+static async Task MonitorGameAsync(string? gameDirectory, string gameType, CancellationToken cancellationToken)
+{
+    var wasRunning = false;
+    while (!cancellationToken.IsCancellationRequested)
+    {
+        try
+        {
+            var running = IsGameRunning(gameDirectory, gameType);
+            if (running && !wasRunning && !TokenStore.IsAuthenticated()) await BeginBrowserAuthorizationAsync(gameType, cancellationToken);
+            wasRunning = running;
+        }
+        catch { }
+        await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+    }
+}
 
-app.Run();
+static bool IsGameRunning(string? gameDirectory, string gameType)
+{
+    var names = gameType switch
+    {
+        "SspNightly" => new[] { "sound-space-plus", "Sound Space Plus", "SSP" },
+        "RhythiaSteam" => new[] { "rhythia" },
+        "LegacyManaged" => new[] { "rhythia" },
+        _ => Array.Empty<string>()
+    };
+    var directory = string.IsNullOrWhiteSpace(gameDirectory) ? null : Path.GetFullPath(gameDirectory);
+    foreach (var name in names)
+    {
+        foreach (var process in Process.GetProcessesByName(name))
+        {
+            try
+            {
+                if (directory == null) return true;
+                var processPath = process.MainModule?.FileName;
+                if (!string.IsNullOrWhiteSpace(processPath) && processPath.StartsWith(directory, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            catch { }
+            finally { process.Dispose(); }
+        }
+    }
+    return false;
+}
+
+static async Task BeginBrowserAuthorizationAsync(string gameType, CancellationToken cancellationToken)
+{
+    using var client = new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") };
+    var response = await client.PostAsJsonAsync("api/rhythkit/device/start", new { gameVersion = gameType }, cancellationToken);
+    if (!response.IsSuccessStatusCode) return;
+    var auth = await response.Content.ReadFromJsonAsync<AuthStartResponse>(cancellationToken: cancellationToken);
+    if (auth == null || string.IsNullOrWhiteSpace(auth.DeviceCode) || string.IsNullOrWhiteSpace(auth.VerificationUrl)) return;
+    Process.Start(new ProcessStartInfo { FileName = auth.VerificationUrl, UseShellExecute = true });
+    for (var i = 0; i < 300 && !cancellationToken.IsCancellationRequested; i++)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+        var poll = await client.PostAsJsonAsync("api/rhythkit/device/poll", new { deviceCode = auth.DeviceCode }, cancellationToken);
+        if (!poll.IsSuccessStatusCode) continue;
+        var result = await poll.Content.ReadFromJsonAsync<AuthResponse>(cancellationToken: cancellationToken);
+        if (result?.Status != "authorized" || string.IsNullOrWhiteSpace(result.Token)) continue;
+        TokenStore.Save(result.Token);
+        ShowConnectedPopup();
+        return;
+    }
+}
+
+static void ShowConnectedPopup()
+{
+    try { MessageBox.Show("Rhythians is connected to RhythKit.", "Rhythians Connected", MessageBoxButtons.OK, MessageBoxIcon.Information); } catch { }
+}
 
 static string? GetArgument(string name)
 {
@@ -70,8 +154,9 @@ static string? GetArgument(string name)
 
 record GameState(string Game);
 record ScoreRequest(string challengeMapId, string clientScoreId, double? accuracy, int? misses, double? speed);
-record AuthPoll(string deviceCode);
-record AuthResponse(string Status, string? Token);
+record AuthPoll(string DeviceCode);
+record AuthStartResponse(string DeviceCode, string UserCode, string VerificationUrl, int ExpiresIn, string? GameVersion);
+record AuthResponse(string Status, string? Token, string? InstallationId);
 record TokenState(string Token, string Game);
 
 static class TokenStore
@@ -81,6 +166,7 @@ static class TokenStore
     {
         try { return File.Exists(Path) ? JsonSerializer.Deserialize<TokenState>(File.ReadAllText(Path)) : null; } catch { return null; }
     }
+    public static bool IsAuthenticated() => !string.IsNullOrWhiteSpace(Load()?.Token);
     public static void Save(string token)
     {
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
