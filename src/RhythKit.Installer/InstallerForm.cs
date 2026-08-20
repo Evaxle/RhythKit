@@ -118,7 +118,7 @@ public sealed class InstallerForm : Form
             {
                 id = "rhythkit",
                 name = "RhythKit",
-                version = "0.2.0",
+                version = "0.3.0",
                 game = target.ToString(),
                 gameDirectory = path,
                 assemblySha256 = hash,
@@ -126,7 +126,7 @@ public sealed class InstallerForm : Form
             };
             await File.WriteAllTextAsync(Path.Combine(modDirectory, "manifest.json"), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
             status.Text = $"RhythKit installed for {target}. Start the game and connect your Rhythians account.";
-            StartAgent();
+            StartAgent(path, target);
             Process.Start(new ProcessStartInfo { FileName = "https://rhythians.vercel.app", UseShellExecute = true });
         }
         catch (Exception ex)
@@ -162,16 +162,24 @@ public sealed class InstallerForm : Form
         var exe = GameDetector.FindExecutable(gameDirectory, "sound-space-plus.exe", "Sound Space Plus.exe", "SSP.exe");
         if (exe == null) throw new FileNotFoundException("SSP Nightly executable was not found.");
         var bridge = Path.Combine(gameDirectory, "RhythKit", "RhythKitBridge.txt");
-        await File.WriteAllTextAsync(bridge, "SSP Nightly integration target detected.\n" + exe);
+        await File.WriteAllTextAsync(bridge, "SSP Nightly integration target detected.\n" + exe + "\nScore source: Godot user://bests");
     }
 
-    private static void StartAgent()
+    private static void StartAgent(string gameDirectory, RhythiaTarget target)
     {
         var agent = Path.Combine(AppContext.BaseDirectory, "RhythKit.Agent.exe");
-        if (File.Exists(agent))
+        if (!File.Exists(agent)) return;
+        var psi = new ProcessStartInfo
         {
-            Process.Start(new ProcessStartInfo { FileName = agent, UseShellExecute = false, CreateNoWindow = true });
-        }
+            FileName = agent,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        psi.ArgumentList.Add("--game-dir");
+        psi.ArgumentList.Add(gameDirectory);
+        psi.ArgumentList.Add("--game-type");
+        psi.ArgumentList.Add(target.ToString());
+        Process.Start(psi);
     }
 }
 
