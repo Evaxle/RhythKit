@@ -38,7 +38,6 @@ public sealed class SspScoreWatcher
         if (!Directory.Exists(godot)) yield break;
         foreach (var directory in Directory.EnumerateDirectories(godot, "*", SearchOption.AllDirectories))
         {
-            var normalized = directory.Replace('\\', '/');
             var name = Path.GetFileName(directory);
             if (!name.Contains("ssp", StringComparison.OrdinalIgnoreCase) && !name.Contains("sound space", StringComparison.OrdinalIgnoreCase)) continue;
             var bests = Path.Combine(directory, "bests");
