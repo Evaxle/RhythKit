@@ -76,10 +76,13 @@ public static class RhythKitBootstrap
             var map = GetValue(attempt, "Map");
             var rhythiansMapId = RhythiansMapIdentity.Resolve(map);
             var mapPath = GetString(map, "Path") ?? GetString(map, "FilePath") ?? GetString(map, "SourcePath");
-            if (rhythiansMapId == null && mapPath != null) rhythiansMapId = RhythiansMapIdentity.ResolveFromRhm(mapPath);
+            if (rhythiansMapId == null && mapPath != null)
+            {
+                rhythiansMapId = RhythiansMapIdentity.ResolveFromSspm(mapPath) ?? RhythiansMapIdentity.ResolveFromRhm(mapPath);
+            }
             var lookupId = rhythiansMapId ?? GetString(map, "Name");
             if (string.IsNullOrWhiteSpace(lookupId)) return;
-            var mapCheck = await new RhythiansApi(new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") }).CheckMapAsync(token, lookupId);
+            var mapCheck = await new RhythiansApi(new System.Net.Http.HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") }).CheckMapAsync(token, lookupId);
             if (mapCheck == null || !mapCheck.Eligible) return;
             var score = new ScoreSubmission(mapCheck.Id, GetString(attempt, "ID") ?? Guid.NewGuid().ToString("N"), GetNullableDouble(attempt, "Accuracy"), GetNullableInt(attempt, "Misses"), GetNullableDouble(attempt, "Speed"));
             await client.SubmitScoreAsync(token, score);
@@ -103,7 +106,7 @@ public static class RhythKitBootstrap
     private static class TokenStore
     {
         private sealed record State(string Token);
-        private static string Path => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rhythians", "rhythkit.json");
+        private static string Path => System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "Rhythians", "rhythkit.json");
         public static string? Load()
         {
             try { return File.Exists(Path) ? JsonSerializer.Deserialize<State>(File.ReadAllText(Path))?.Token : null; } catch { return null; }
