@@ -86,7 +86,7 @@ public static class RhythKitBootstrap
             if (attempt == null || GetBool(attempt, "IsReplay") || !GetBool(attempt, "Alive") || !GetBool(attempt, "Qualifies")) return;
 
             var map = GetValue(attempt, "Map");
-            var mapId = GetString(map, "ID");
+            var mapId = GetString(map, "Name");
             if (string.IsNullOrWhiteSpace(mapId)) return;
 
             var mapCheck = await new RhythiansApi(new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") }).CheckMapAsync(token, mapId);
@@ -117,7 +117,7 @@ public static class RhythKitBootstrap
 
     private static string? GetString(object? target, string name) => GetValue(target, name)?.ToString();
     private static bool GetBool(object? target, string name) => GetValue(target, name) is bool value && value;
-    private static double? GetNullableDouble(object? target, string name) => GetValue(target, name) is double value ? value : null;
+    private static double? GetNullableDouble(object? target, string name) => GetValue(target, name) switch { double value => value, float value => value, _ => null };
     private static int? GetNullableInt(object? target, string name) => GetValue(target, name) switch { int value => value, uint value when value <= int.MaxValue => (int)value, _ => null };
 
     private static class TokenStore
