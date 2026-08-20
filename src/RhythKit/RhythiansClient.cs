@@ -6,6 +6,8 @@ namespace RhythKit;
 
 public sealed class RhythiansClient(HttpClient httpClient)
 {
+    public static RhythiansClient CreateDefault() => new(new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app") });
+
     public async Task<DeviceAuthorization> StartDeviceAuthorizationAsync(CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsJsonAsync("/api/rhythkit/device/start", new { gameVersion = "0.1.0" }, cancellationToken);
