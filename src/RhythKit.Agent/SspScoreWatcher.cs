@@ -1,13 +1,12 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 
 namespace RhythKit.Agent;
 
 public sealed class SspScoreWatcher
 {
     readonly string? gameDirectory;
-    readonly Dictionary<string, DateTime> seen = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> seenRecords = new(StringComparer.OrdinalIgnoreCase);
     readonly CancellationToken cancellationToken;
 
     public SspScoreWatcher(string? gameDirectory, CancellationToken cancellationToken)
@@ -19,14 +18,13 @@ public sealed class SspScoreWatcher
     public async Task RunAsync()
     {
         if (string.IsNullOrWhiteSpace(gameDirectory) || !Directory.Exists(gameDirectory)) return;
-        var bests = FindBestDirectories();
-        foreach (var directory in bests) Seed(directory);
+        foreach (var directory in FindBestDirectories()) Seed(directory);
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
                 foreach (var directory in FindBestDirectories())
-                    await ScanAsync(directory);
+                    await ScanAsync(directory).ConfigureAwait(false);
             }
             catch { }
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
@@ -49,7 +47,8 @@ public sealed class SspScoreWatcher
     {
         foreach (var file in Directory.EnumerateFiles(directory))
         {
-            try { seen[file] = File.GetLastWriteTimeUtc(file); } catch { }
+            if (!TryRead(file, out var mapId, out var records)) continue;
+            foreach (var record in records) seenRecords.Add(CreateRecordKey(mapId, record));
         }
     }
 
@@ -57,30 +56,26 @@ public sealed class SspScoreWatcher
     {
         foreach (var file in Directory.EnumerateFiles(directory))
         {
-            DateTime stamp;
-            try { stamp = File.GetLastWriteTimeUtc(file); } catch { continue; }
-            if (seen.TryGetValue(file, out var previous) && previous >= stamp) continue;
-            seen[file] = stamp;
-            await ProcessAsync(file).ConfigureAwait(false);
+            if (!TryRead(file, out var mapId, out var records)) continue;
+            foreach (var record in records.Where(x => x.Passed && x.TotalNotes > 0))
+            {
+                var recordKey = CreateRecordKey(mapId, record);
+                if (!seenRecords.Add(recordKey)) continue;
+                var accuracy = Math.Clamp(record.HitNotes * 100.0 / record.TotalNotes, 0, 100);
+                var misses = Math.Max(0, record.TotalNotes - record.HitNotes);
+                await SubmitAsync(mapId, CreateScoreId(recordKey), accuracy, misses).ConfigureAwait(false);
+            }
         }
     }
 
-    async Task ProcessAsync(string file)
+    static string CreateRecordKey(string mapId, PbRecord record)
     {
-        if (!TryRead(file, out var mapId, out var records)) return;
-        foreach (var record in records.Where(x => x.Passed && x.TotalNotes > 0))
-        {
-            var accuracy = Math.Clamp(record.HitNotes * 100.0 / record.TotalNotes, 0, 100);
-            var misses = Math.Max(0, record.TotalNotes - record.HitNotes);
-            var clientScoreId = CreateScoreId(mapId, record);
-            await SubmitAsync(mapId, clientScoreId, accuracy, misses).ConfigureAwait(false);
-        }
+        return $"{mapId}:{record.Key}:{record.Passed}:{record.Pauses}:{record.HitNotes}:{record.TotalNotes}:{record.Position}:{record.Length}";
     }
 
-    static string CreateScoreId(string mapId, PbRecord record)
+    static string CreateScoreId(string recordKey)
     {
-        var raw = $"ssp:{mapId}:{record.Key}:{record.HitNotes}:{record.TotalNotes}:{record.Length}:{record.Pauses}:{record.Position}";
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw))).ToLowerInvariant();
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("ssp:" + recordKey))).ToLowerInvariant();
     }
 
     static bool TryRead(string file, out string mapId, out List<PbRecord> records)
