@@ -100,6 +100,11 @@ public sealed class InstallerForm : Form
             var hash = Convert.ToHexString(SHA256.HashData(payload));
             await File.WriteAllBytesAsync(Path.Combine(modDirectory, "RhythKit.dll"), payload);
 
+            var agentSource = Path.Combine(AppContext.BaseDirectory, "RhythKit.Agent.exe");
+            if (!File.Exists(agentSource)) throw new FileNotFoundException("RhythKit.Agent.exe was not found beside the installer. Rebuild with build.ps1.");
+            var agentPath = Path.Combine(modDirectory, "RhythKit.Agent.exe");
+            File.Copy(agentSource, agentPath, true);
+
             status.Text = target == RhythiaTarget.LegacyManaged ? "Installing legacy Rhythia integration..." : "Installing RhythKit integration...";
 
             switch (target)
@@ -122,12 +127,13 @@ public sealed class InstallerForm : Form
                 version = "0.4.0",
                 game = target.ToString(),
                 gameDirectory = path,
+                agentPath,
                 assemblySha256 = hash,
                 installedAt = DateTimeOffset.UtcNow
             };
             await File.WriteAllTextAsync(Path.Combine(modDirectory, "manifest.json"), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
-            InstallAgentStartup(path, target);
-            StartAgent(path, target);
+            InstallAgentStartup(agentPath, path, target);
+            StartAgent(agentPath, path, target);
             status.Text = $"RhythKit installed for {target}. Start the game to connect Rhythians.";
         }
         catch (Exception ex)
@@ -166,21 +172,17 @@ public sealed class InstallerForm : Form
         await File.WriteAllTextAsync(bridge, "SSP Nightly integration target detected.\n" + exe + "\nScore source: Godot user://bests");
     }
 
-    private static void InstallAgentStartup(string gameDirectory, RhythiaTarget target)
+    private static void InstallAgentStartup(string agentPath, string gameDirectory, RhythiaTarget target)
     {
-        var agent = Path.Combine(AppContext.BaseDirectory, "RhythKit.Agent.exe");
-        if (!File.Exists(agent)) throw new FileNotFoundException("RhythKit.Agent.exe was not found beside the installer.");
         using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-        key!.SetValue("RhythKit", $"\"{agent}\" --game-dir \"{gameDirectory}\" --game-type {target}");
+        key!.SetValue("RhythKit", $"\"{agentPath}\" --game-dir \"{gameDirectory}\" --game-type {target}");
     }
 
-    private static void StartAgent(string gameDirectory, RhythiaTarget target)
+    private static void StartAgent(string agentPath, string gameDirectory, RhythiaTarget target)
     {
-        var agent = Path.Combine(AppContext.BaseDirectory, "RhythKit.Agent.exe");
-        if (!File.Exists(agent)) return;
         var psi = new ProcessStartInfo
         {
-            FileName = agent,
+            FileName = agentPath,
             UseShellExecute = false,
             CreateNoWindow = true
         };
