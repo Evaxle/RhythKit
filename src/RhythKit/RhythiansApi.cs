@@ -21,6 +21,7 @@ public sealed class RhythiansApi(HttpClient httpClient)
 
 public sealed record MapCheckResponse(
     [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("rhythiaMapId")] string RhythiaMapId,
     [property: JsonPropertyName("title")] string Title,
     [property: JsonPropertyName("rating")] double Rating,
     [property: JsonPropertyName("length")] double? Length,
