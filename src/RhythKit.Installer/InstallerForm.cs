@@ -4,22 +4,32 @@ using System.Text.Json;
 
 namespace RhythKit.Installer;
 
+enum RhythiaTarget
+{
+    Unknown,
+    SspNightly,
+    RhythiaSteam,
+    LegacyManaged
+}
+
 public sealed class InstallerForm : Form
 {
     private readonly TextBox gamePath = new() { Dock = DockStyle.Fill };
+    private readonly Label detected = new() { AutoSize = true, Text = "Detected: unknown" };
     private readonly Label status = new() { AutoSize = true, Text = "Choose your Rhythia game folder." };
     private readonly Button install = new() { Text = "Install RhythKit", AutoSize = true };
 
     public InstallerForm()
     {
         Text = "RhythKit Installer";
-        Width = 680;
-        Height = 260;
+        Width = 760;
+        Height = 300;
         StartPosition = FormStartPosition.CenterScreen;
 
         var browse = new Button { Text = "Browse", AutoSize = true };
         browse.Click += (_, _) => Browse();
         install.Click += async (_, _) => await InstallAsync();
+        gamePath.TextChanged += (_, _) => Detect();
 
         var pathRow = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(16), ColumnCount = 2 };
         pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -27,18 +37,39 @@ public sealed class InstallerForm : Form
         pathRow.Controls.Add(gamePath, 0, 0);
         pathRow.Controls.Add(browse, 1, 0);
 
+        var info = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(16, 0, 16, 8) };
+        info.Controls.Add(detected);
+        info.Controls.Add(status);
+
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(16, 0, 16, 16) };
         buttons.Controls.Add(install);
 
-        Controls.Add(status);
         Controls.Add(buttons);
+        Controls.Add(info);
         Controls.Add(pathRow);
     }
 
     private void Browse()
     {
-        using var dialog = new FolderBrowserDialog { Description = "Select the Rhythia game folder" };
-        if (dialog.ShowDialog(this) == DialogResult.OK) gamePath.Text = dialog.SelectedPath;
+        using var dialog = new FolderBrowserDialog { Description = "Select the Rhythia or SSP Nightly game folder" };
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
+            gamePath.Text = dialog.SelectedPath;
+            Detect();
+        }
+    }
+
+    private void Detect()
+    {
+        var target = GameDetector.Detect(gamePath.Text.Trim());
+        detected.Text = target switch
+        {
+            RhythiaTarget.SspNightly => "Detected: SSP Nightly",
+            RhythiaTarget.RhythiaSteam => "Detected: Rhythia Steam",
+            RhythiaTarget.LegacyManaged => "Detected: legacy Rhythia",
+            _ => "Detected: unknown"
+        };
+        install.Enabled = target != RhythiaTarget.Unknown;
     }
 
     private async Task InstallAsync()
@@ -46,42 +77,56 @@ public sealed class InstallerForm : Form
         var path = gamePath.Text.Trim();
         if (!Directory.Exists(path))
         {
-            MessageBox.Show(this, "Select a valid Rhythia game folder.", "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, "Select a valid game folder.", "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var target = GameDetector.Detect(path);
+        if (target == RhythiaTarget.Unknown)
+        {
+            MessageBox.Show(this, "RhythKit could not identify this game build. No files were changed.", "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         install.Enabled = false;
         try
         {
-            status.Text = "Locating Rhythia.dll...";
-            var assemblyPath = RhythiaPatcher.FindRhythiaAssembly(path);
-            var assemblyDirectory = Path.GetDirectoryName(assemblyPath)!;
-            var modDirectory = Path.Combine(path, "RhythKit");
-            Directory.CreateDirectory(modDirectory);
-
             var payload = RhythKitPayload.Data;
             if (payload.Length == 0) throw new InvalidOperationException("The installer was not built with the RhythKit payload. Run build.ps1.");
 
-            var modAssembly = Path.Combine(assemblyDirectory, "RhythKit.dll");
-            await File.WriteAllBytesAsync(modAssembly, payload);
+            var modDirectory = Path.Combine(path, "RhythKit");
+            Directory.CreateDirectory(modDirectory);
             var hash = Convert.ToHexString(SHA256.HashData(payload));
+            await File.WriteAllBytesAsync(Path.Combine(modDirectory, "RhythKit.dll"), payload);
 
-            status.Text = "Patching Rhythia...";
-            RhythiaPatcher.Patch(path);
-            VerifyInstalled(path);
+            status.Text = target == RhythiaTarget.LegacyManaged ? "Installing legacy Rhythia integration..." : "Installing RhythKit integration...";
+
+            switch (target)
+            {
+                case RhythiaTarget.LegacyManaged:
+                    InstallLegacy(path, payload);
+                    break;
+                case RhythiaTarget.SspNightly:
+                    await InstallSspNightlyAsync(path);
+                    break;
+                case RhythiaTarget.RhythiaSteam:
+                    InstallSteam(path);
+                    break;
+            }
 
             var manifest = new
             {
                 id = "rhythkit",
                 name = "RhythKit",
-                version = "0.1.0",
-                assembly = "RhythKit.dll",
+                version = "0.2.0",
+                game = target.ToString(),
+                gameDirectory = path,
                 assemblySha256 = hash,
                 installedAt = DateTimeOffset.UtcNow
             };
             await File.WriteAllTextAsync(Path.Combine(modDirectory, "manifest.json"), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
-
-            status.Text = "RhythKit installed and verified. Start Rhythia and use Rhythian Login.";
+            status.Text = $"RhythKit installed for {target}. Start the game and connect your Rhythians account.";
+            StartAgent();
             Process.Start(new ProcessStartInfo { FileName = "https://rhythians.vercel.app", UseShellExecute = true });
         }
         catch (Exception ex)
@@ -91,15 +136,63 @@ public sealed class InstallerForm : Form
         }
         finally
         {
-            install.Enabled = true;
+            Detect();
         }
     }
 
-    private static void VerifyInstalled(string gameDirectory)
+    private static void InstallLegacy(string gameDirectory, byte[] payload)
     {
         var assemblyPath = RhythiaPatcher.FindRhythiaAssembly(gameDirectory);
         var assemblyDirectory = Path.GetDirectoryName(assemblyPath)!;
-        if (!File.Exists(Path.Combine(assemblyDirectory, "RhythKit.dll"))) throw new InvalidOperationException("RhythKit.dll was not installed beside Rhythia.dll.");
-        if (!RhythiaPatcher.IsPatched(assemblyPath)) throw new InvalidOperationException("Rhythia.dll was not patched successfully.");
+        File.WriteAllBytes(Path.Combine(assemblyDirectory, "RhythKit.dll"), payload);
+        RhythiaPatcher.Patch(gameDirectory);
+        if (!RhythiaPatcher.IsPatched(assemblyPath)) throw new InvalidOperationException("Legacy Rhythia was not patched successfully.");
+    }
+
+    private static void InstallSteam(string gameDirectory)
+    {
+        var exe = GameDetector.FindExecutable(gameDirectory, "rhythia.exe");
+        if (exe == null) throw new FileNotFoundException("rhythia.exe was not found.");
+        var bridge = Path.Combine(gameDirectory, "RhythKit", "RhythKitBridge.txt");
+        File.WriteAllText(bridge, "Rhythia Steam integration target detected.\n" + exe);
+    }
+
+    private static async Task InstallSspNightlyAsync(string gameDirectory)
+    {
+        var exe = GameDetector.FindExecutable(gameDirectory, "sound-space-plus.exe", "Sound Space Plus.exe", "SSP.exe");
+        if (exe == null) throw new FileNotFoundException("SSP Nightly executable was not found.");
+        var bridge = Path.Combine(gameDirectory, "RhythKit", "RhythKitBridge.txt");
+        await File.WriteAllTextAsync(bridge, "SSP Nightly integration target detected.\n" + exe);
+    }
+
+    private static void StartAgent()
+    {
+        var agent = Path.Combine(AppContext.BaseDirectory, "RhythKit.Agent.exe");
+        if (File.Exists(agent))
+        {
+            Process.Start(new ProcessStartInfo { FileName = agent, UseShellExecute = false, CreateNoWindow = true });
+        }
+    }
+}
+
+static class GameDetector
+{
+    public static RhythiaTarget Detect(string directory)
+    {
+        if (!Directory.Exists(directory)) return RhythiaTarget.Unknown;
+        if (FindExecutable(directory, "sound-space-plus.exe", "Sound Space Plus.exe", "SSP.exe") != null || Directory.EnumerateFiles(directory, "*.pck", SearchOption.TopDirectoryOnly).Any(x => Path.GetFileName(x).Contains("ssp", StringComparison.OrdinalIgnoreCase))) return RhythiaTarget.SspNightly;
+        if (FindExecutable(directory, "rhythia.exe") != null) return RhythiaTarget.RhythiaSteam;
+        if (File.Exists(Path.Combine(directory, "Rhythia.dll")) || Directory.EnumerateFiles(directory, "Rhythia.dll", SearchOption.AllDirectories).Any()) return RhythiaTarget.LegacyManaged;
+        return RhythiaTarget.Unknown;
+    }
+
+    public static string? FindExecutable(string directory, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var direct = Path.Combine(directory, name);
+            if (File.Exists(direct)) return direct;
+        }
+        return null;
     }
 }
