@@ -40,14 +40,7 @@ public static class RhythKitBootstrap
         if (root == null || root.GetType().Name != "MainMenu") return;
         var buttons = root.GetNodeOrNull("Menus/Home/Buttons");
         if (buttons == null || buttons.GetNodeOrNull("RhythianLogin") != null) return;
-
-        var button = new Button
-        {
-            Name = "RhythianLogin",
-            Text = token == null ? "Rhythian Login" : "Rhythian Connected",
-            CustomMinimumSize = new Vector2(0, 52),
-            TooltipText = "Connect Rhythia to your Rhythians account"
-        };
+        var button = new Button { Name = "RhythianLogin", Text = token == null ? "Rhythian Login" : "Rhythian Connected", CustomMinimumSize = new Vector2(0, 52), TooltipText = "Connect Rhythia to your Rhythians account" };
         button.Pressed += () => _ = ConnectAsync(button);
         buttons.AddChild(button);
     }
@@ -67,10 +60,7 @@ public static class RhythKitBootstrap
             GD.PrintErr($"[RhythKit] {exception}");
             button.Text = "Rhythian Login";
         }
-        finally
-        {
-            button.Disabled = false;
-        }
+        finally { button.Disabled = false; }
     }
 
     private static async void ProcessResult()
@@ -78,43 +68,33 @@ public static class RhythKitBootstrap
         if (resultQueued || token == null || client == null) return;
         resultQueued = true;
         await Task.Yield();
-
         try
         {
             var legacyRunner = FindType("LegacyRunner");
             var attempt = legacyRunner?.GetProperty("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) ?? legacyRunner?.GetField("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
             if (attempt == null || GetBool(attempt, "IsReplay") || !GetBool(attempt, "Alive") || !GetBool(attempt, "Qualifies")) return;
-
             var map = GetValue(attempt, "Map");
-            var rhythiaMapId = GetString(map, "Name");
-            if (string.IsNullOrWhiteSpace(rhythiaMapId)) return;
-
-            var mapCheck = await new RhythiansApi(new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") }).CheckMapAsync(token, rhythiaMapId);
+            var rhythiansMapId = RhythiansMapIdentity.Resolve(map);
+            var mapPath = GetString(map, "Path") ?? GetString(map, "FilePath") ?? GetString(map, "SourcePath");
+            if (rhythiansMapId == null && mapPath != null) rhythiansMapId = RhythiansMapIdentity.ResolveFromRhm(mapPath);
+            var lookupId = rhythiansMapId ?? GetString(map, "Name");
+            if (string.IsNullOrWhiteSpace(lookupId)) return;
+            var mapCheck = await new RhythiansApi(new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") }).CheckMapAsync(token, lookupId);
             if (mapCheck == null || !mapCheck.Eligible) return;
-
             var score = new ScoreSubmission(mapCheck.Id, GetString(attempt, "ID") ?? Guid.NewGuid().ToString("N"), GetNullableDouble(attempt, "Accuracy"), GetNullableInt(attempt, "Misses"), GetNullableDouble(attempt, "Speed"));
             await client.SubmitScoreAsync(token, score);
         }
-        catch (Exception exception)
-        {
-            GD.PrintErr($"[RhythKit] Score submission failed: {exception}");
-        }
+        catch (Exception exception) { GD.PrintErr($"[RhythKit] Score submission failed: {exception}"); }
     }
 
     private static Type? FindType(string name) => AppDomain.CurrentDomain.GetAssemblies().SelectMany(SafeTypes).FirstOrDefault(type => type.Name == name);
-
-    private static IEnumerable<Type> SafeTypes(Assembly assembly)
-    {
-        try { return assembly.GetTypes(); } catch { return []; }
-    }
-
+    private static IEnumerable<Type> SafeTypes(Assembly assembly) { try { return assembly.GetTypes(); } catch { return []; } }
     private static object? GetValue(object? target, string name)
     {
         if (target == null) return null;
         var type = target.GetType();
         return type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target) ?? type.GetField(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
     }
-
     private static string? GetString(object? target, string name) => GetValue(target, name)?.ToString();
     private static bool GetBool(object? target, string name) => GetValue(target, name) is bool value && value;
     private static double? GetNullableDouble(object? target, string name) => GetValue(target, name) switch { double value => value, float value => value, _ => null };
@@ -124,17 +104,10 @@ public static class RhythKitBootstrap
     {
         private sealed record State(string Token);
         private static string Path => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rhythians", "rhythkit.json");
-
         public static string? Load()
         {
-            try
-            {
-                if (!File.Exists(Path)) return null;
-                return JsonSerializer.Deserialize<State>(File.ReadAllText(Path))?.Token;
-            }
-            catch { return null; }
+            try { return File.Exists(Path) ? JsonSerializer.Deserialize<State>(File.ReadAllText(Path))?.Token : null; } catch { return null; }
         }
-
         public static void Save(string value)
         {
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
