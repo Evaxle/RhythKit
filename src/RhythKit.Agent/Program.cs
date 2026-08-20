@@ -39,11 +39,7 @@ app.MapPost("/score", async (HttpRequest request) =>
 
 app.MapPost("/auth/start", async () => await StartAuthorizationAsync(gameType));
 
-app.MapPost("/auth/poll", async (AuthPoll request) =>
-{
-    var result = await PollAuthorizationAsync(request.DeviceCode);
-    return result;
-});
+app.MapPost("/auth/poll", async (AuthPoll request) => await PollAuthorizationAsync(request.DeviceCode));
 
 var watcher = new RhythKit.Agent.SspScoreWatcher(gameDirectory, app.Lifetime.ApplicationStopping);
 if (gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)) _ = watcher.RunAsync();
@@ -57,9 +53,7 @@ static async Task<IResult> StartAuthorizationAsync(string gameType)
     var result = await client.PostAsJsonAsync("api/rhythkit/device/start", new { gameVersion = gameType });
     var json = await result.Content.ReadAsStringAsync();
     if (!result.IsSuccessStatusCode) return Results.Content(json, "application/json", System.Text.Encoding.UTF8, (int)result.StatusCode);
-    var auth = JsonSerializer.Deserialize<AuthStartResponse>(json);
-    if (auth == null) return Results.Problem("Invalid authorization response.");
-    return Results.Json(auth);
+    return Results.Content(json, "application/json", System.Text.Encoding.UTF8, (int)result.StatusCode);
 }
 
 static async Task<IResult> PollAuthorizationAsync(string deviceCode)
@@ -93,13 +87,7 @@ static async Task MonitorGameAsync(string? gameDirectory, string gameType, Cance
 
 static bool IsGameRunning(string? gameDirectory, string gameType)
 {
-    var names = gameType switch
-    {
-        "SspNightly" => new[] { "sound-space-plus", "Sound Space Plus", "SSP" },
-        "RhythiaSteam" => new[] { "rhythia" },
-        "LegacyManaged" => new[] { "rhythia" },
-        _ => Array.Empty<string>()
-    };
+    var names = GetTargetProcessNames(gameDirectory, gameType);
     var directory = string.IsNullOrWhiteSpace(gameDirectory) ? null : Path.GetFullPath(gameDirectory);
     foreach (var name in names)
     {
@@ -116,6 +104,34 @@ static bool IsGameRunning(string? gameDirectory, string gameType)
         }
     }
     return false;
+}
+
+static string[] GetTargetProcessNames(string? gameDirectory, string gameType)
+{
+    if (!string.IsNullOrWhiteSpace(gameDirectory))
+    {
+        var bridge = Path.Combine(gameDirectory, "RhythKit", "RhythKitBridge.txt");
+        if (File.Exists(bridge))
+        {
+            try
+            {
+                var lines = File.ReadAllLines(bridge);
+                if (lines.Length > 1 && File.Exists(lines[1].Trim()))
+                {
+                    var name = Path.GetFileNameWithoutExtension(lines[1].Trim());
+                    if (!string.IsNullOrWhiteSpace(name)) return new[] { name };
+                }
+            }
+            catch { }
+        }
+    }
+    return gameType switch
+    {
+        "RhythiaSteam" => new[] { "rhythia" },
+        "LegacyManaged" => new[] { "rhythia" },
+        "SspNightly" => new[] { "sound-space-plus", "Sound Space Plus", "SSP" },
+        _ => Array.Empty<string>()
+    };
 }
 
 static async Task BeginBrowserAuthorizationAsync(string gameType, CancellationToken cancellationToken)
