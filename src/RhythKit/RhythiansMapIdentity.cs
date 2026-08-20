@@ -14,7 +14,6 @@ public static class RhythiansMapIdentity
     {
         var embedded = ReadProperty(map, "RhythiansId") ?? ReadProperty(map, "rhythiansId");
         if (IsGuid(embedded)) return embedded;
-
         var path = ReadProperty(map, "Path") ?? ReadProperty(map, "FilePath") ?? ReadProperty(map, "SourcePath");
         if (path != null)
         {
@@ -23,7 +22,6 @@ public static class RhythiansMapIdentity
             var rhm = ResolveFromRhm(path);
             if (rhm != null) return rhm;
         }
-
         var filenameId = ExtractGuidFromPath(path);
         if (filenameId != null) return filenameId;
         var legacyId = ReadProperty(map, "LegacyId");
@@ -39,11 +37,11 @@ public static class RhythiansMapIdentity
             if (data.Length < 128 || BitConverter.ToUInt32(data, 0) != 0x6d2b5353 || BitConverter.ToUInt16(data, 4) != 2) return null;
             var customOffset = checked((long)BitConverter.ToUInt64(data, 48));
             var customLength = checked((long)BitConverter.ToUInt64(data, 56));
-            if (customOffset < 0 || customLength < 2 || customOffset + customLength > data.Length) return null;
+            if (customLength < 2 || customOffset < 0 || customOffset + customLength > data.Length) return null;
             var offset = checked((int)customOffset);
             var end = checked(offset + (int)customLength);
-            var fields = BitConverter.ToUInt16(data, offset++);
-            offset++;
+            var fields = BitConverter.ToUInt16(data, offset);
+            offset += 2;
             for (var index = 0; index < fields && offset < end; index++)
             {
                 if (offset + 2 > end) return null;
@@ -100,9 +98,9 @@ public static class RhythiansMapIdentity
 
     private static int SkipValue(byte[] data, int offset, int end, byte type) => type switch
     {
-        0x01 or 0x05 => CheckedAdvance(offset, 4 > 1 && type == 0x05 ? 4 : 1, end),
+        0x01 => CheckedAdvance(offset, 1, end),
         0x02 => CheckedAdvance(offset, 2, end),
-        0x03 => CheckedAdvance(offset, 4, end),
+        0x03 or 0x05 => CheckedAdvance(offset, 4, end),
         0x04 or 0x06 => CheckedAdvance(offset, 8, end),
         0x07 => SkipPosition(data, offset, end),
         0x08 or 0x09 => SkipShortBuffer(data, offset, end),
@@ -138,7 +136,7 @@ public static class RhythiansMapIdentity
         return next;
     }
 
-    private static object? ReadProperty(object? target, string name)
+    private static string? ReadProperty(object? target, string name)
     {
         if (target == null) return null;
         try
