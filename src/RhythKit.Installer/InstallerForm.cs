@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace RhythKit.Installer;
@@ -52,22 +53,51 @@ public sealed class InstallerForm : Form
         install.Enabled = false;
         try
         {
+            status.Text = "Locating Rhythia.dll...";
+            var assemblyPath = RhythiaPatcher.FindRhythiaAssembly(path);
             var modDirectory = Path.Combine(path, "RhythKit");
             Directory.CreateDirectory(modDirectory);
-            var sourceAssembly = Path.Combine(AppContext.BaseDirectory, "RhythKit.dll");
-            if (File.Exists(sourceAssembly)) File.Copy(sourceAssembly, Path.Combine(modDirectory, "RhythKit.dll"), true);
-            var manifest = new { id = "rhythkit", name = "RhythKit", version = "0.1.0", assembly = "RhythKit.dll" };
+
+            var payload = RhythKitPayload.Data;
+            if (payload.Length == 0) throw new InvalidOperationException("The installer was not built with the RhythKit payload. Run build.ps1.");
+
+            var modAssembly = Path.Combine(modDirectory, "RhythKit.dll");
+            await File.WriteAllBytesAsync(modAssembly, payload);
+            var hash = Convert.ToHexString(SHA256.HashData(payload));
+
+            status.Text = "Patching Rhythia...";
+            RhythiaPatcher.Patch(path);
+            VerifyInstalled(path);
+
+            var manifest = new
+            {
+                id = "rhythkit",
+                name = "RhythKit",
+                version = "0.1.0",
+                assembly = "RhythKit.dll",
+                assemblySha256 = hash,
+                installedAt = DateTimeOffset.UtcNow
+            };
             await File.WriteAllTextAsync(Path.Combine(modDirectory, "manifest.json"), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
-            status.Text = "RhythKit files installed. The game integration loader must be present before the assembly can load.";
+
+            status.Text = "RhythKit installed and verified. Start Rhythia and use Rhythian Login.";
             Process.Start(new ProcessStartInfo { FileName = "https://rhythians.vercel.app", UseShellExecute = true });
         }
         catch (Exception ex)
         {
             status.Text = ex.Message;
+            MessageBox.Show(this, ex.ToString(), "RhythKit installation failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
             install.Enabled = true;
         }
+    }
+
+    private static void VerifyInstalled(string gameDirectory)
+    {
+        var assemblyPath = RhythiaPatcher.FindRhythiaAssembly(gameDirectory);
+        if (!File.Exists(Path.Combine(gameDirectory, "RhythKit", "RhythKit.dll"))) throw new InvalidOperationException("RhythKit.dll was not installed.");
+        if (!RhythiaPatcher.IsPatched(assemblyPath)) throw new InvalidOperationException("Rhythia.dll was not patched successfully.");
     }
 }
