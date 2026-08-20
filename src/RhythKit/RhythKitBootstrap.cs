@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
 using Godot;
@@ -21,20 +20,16 @@ public static class RhythKitBootstrap
         var tree = Engine.GetMainLoop() as SceneTree;
         if (tree == null) return;
         tree.NodeAdded += OnNodeAdded;
-        CallDeferred(nameof(InstallLoginButton));
+        Callable.From(InstallLoginButton).CallDeferred();
     }
 
     private static void OnNodeAdded(Node node)
     {
-        if (node.GetType().Name == "MainMenu")
-        {
-            node.CallDeferred(nameof(InstallLoginButton));
-        }
-
+        if (node.GetType().Name == "MainMenu") Callable.From(InstallLoginButton).CallDeferred();
         if (node.GetType().Name == "Results")
         {
             resultQueued = false;
-            node.CallDeferred(nameof(ProcessResult));
+            Callable.From(ProcessResult).CallDeferred();
         }
     }
 
@@ -87,12 +82,8 @@ public static class RhythKitBootstrap
         try
         {
             var legacyRunner = FindType("LegacyRunner");
-            var attemptProperty = legacyRunner?.GetProperty("CurrentAttempt", BindingFlags.Public | BindingFlags.Static);
-            var attemptField = legacyRunner?.GetField("CurrentAttempt", BindingFlags.Public | BindingFlags.Static);
-            var attempt = attemptProperty?.GetValue(null) ?? attemptField?.GetValue(null);
-            if (attempt == null) return;
-
-            if (GetBool(attempt, "IsReplay") || !GetBool(attempt, "Alive") || !GetBool(attempt, "Qualifies")) return;
+            var attempt = legacyRunner?.GetProperty("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) ?? legacyRunner?.GetField("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+            if (attempt == null || GetBool(attempt, "IsReplay") || !GetBool(attempt, "Alive") || !GetBool(attempt, "Qualifies")) return;
 
             var map = GetValue(attempt, "Map");
             var mapId = GetString(map, "ID");
@@ -101,13 +92,7 @@ public static class RhythKitBootstrap
             var mapCheck = await new RhythiansApi(new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") }).CheckMapAsync(token, mapId);
             if (mapCheck == null || !mapCheck.Eligible) return;
 
-            var score = new ScoreSubmission(
-                mapId,
-                GetString(attempt, "ID") ?? Guid.NewGuid().ToString("N"),
-                GetNullableDouble(attempt, "Accuracy"),
-                GetNullableInt(attempt, "Misses"),
-                GetNullableDouble(attempt, "Speed"));
-
+            var score = new ScoreSubmission(mapId, GetString(attempt, "ID") ?? Guid.NewGuid().ToString("N"), GetNullableDouble(attempt, "Accuracy"), GetNullableInt(attempt, "Misses"), GetNullableDouble(attempt, "Speed"));
             await client.SubmitScoreAsync(token, score);
         }
         catch (Exception exception)
