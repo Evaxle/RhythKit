@@ -1,11 +1,11 @@
 using System.Diagnostics;
 using System.Net.Http.Json;
-using System.Text.Json;
 using System.Windows.Forms;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using RhythKit;
 using RhythKit.Agent;
 
 var gameDirectory = GetArgument("--game-dir");
@@ -17,6 +17,7 @@ builder.WebHost.UseUrls("http://127.0.0.1:45872");
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.SetIsOriginAllowed(origin => origin.StartsWith("https://rhythians.vercel.app", StringComparison.OrdinalIgnoreCase) || origin.StartsWith("https://rhythians.com", StringComparison.OrdinalIgnoreCase)).AllowAnyHeader().AllowAnyMethod()));
 var app = builder.Build();
 app.UseCors();
+var client = RhythiansClient.CreateDefault();
 
 app.MapGet("/status", async () =>
 {
@@ -26,6 +27,20 @@ app.MapGet("/status", async () =>
     var connection = await TestRemoteConnectionAsync(state.Token);
     var connected = gameRunning && connection.Authenticated;
     return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected, authenticated = connection.Authenticated, username = connection.Username, game = state.Game });
+});
+
+app.MapPost("/auth/start", async () =>
+{
+    try
+    {
+        var authorization = await client.StartDeviceAuthorizationAsync();
+        _ = Task.Run(() => CompleteAuthorizationAsync(authorization));
+        return Results.Json(authorization);
+    }
+    catch (Exception exception)
+    {
+        return Results.Problem(exception.Message, statusCode: 502);
+    }
 });
 
 app.MapPost("/game", async (HttpRequest request) =>
@@ -74,9 +89,81 @@ app.MapPost("/exit", () =>
     return Results.Ok();
 });
 
-_ = Task.Run(() => Application.Run(new RhythKitSettingsForm(gameDirectory ?? string.Empty, gameType)));
+var form = new RhythKitSettingsForm(gameDirectory ?? string.Empty, gameType);
+_ = Task.Run(async () =>
+{
+    var seenGame = false;
+    while (!CancellationToken.None.IsCancellationRequested)
+    {
+        var running = IsGameRunning(gameDirectory, gameType);
+        if (running)
+        {
+            seenGame = true;
+            if (string.IsNullOrWhiteSpace(TokenStore.Load()?.Token)) _ = EnsureAuthorizationAsync();
+        }
+        else if (seenGame)
+        {
+            form.CloseFromGameExit();
+            await Task.Delay(250);
+            Environment.Exit(0);
+            return;
+        }
+        await Task.Delay(2000);
+    }
+});
 
-await app.RunAsync();
+_ = Task.Run(async () =>
+{
+    await Task.Delay(1500);
+    if (string.IsNullOrWhiteSpace(TokenStore.Load()?.Token)) await EnsureAuthorizationAsync();
+});
+
+Application.Run(form);
+
+async Task EnsureAuthorizationAsync()
+{
+    if (!string.IsNullOrWhiteSpace(TokenStore.Load()?.Token)) return;
+    try
+    {
+        var authorization = await client.StartDeviceAuthorizationAsync();
+        Process.Start(new ProcessStartInfo { FileName = authorization.VerificationUrl, UseShellExecute = true });
+        await CompleteAuthorizationAsync(authorization);
+    }
+    catch { }
+}
+
+async Task CompleteAuthorizationAsync(DeviceAuthorization authorization)
+{
+    var deadline = DateTime.UtcNow.AddSeconds(authorization.ExpiresIn);
+    while (DateTime.UtcNow < deadline)
+    {
+        try
+        {
+            var result = await client.PollDeviceAuthorizationAsync(authorization.DeviceCode);
+            if (result?.Status == "authorized" && !string.IsNullOrWhiteSpace(result.Token))
+            {
+                var connection = await TestRemoteConnectionAsync(result.Token);
+                TokenStore.Save(result.Token, connection.Username, gameType);
+                return;
+            }
+        }
+        catch { }
+        await Task.Delay(TimeSpan.FromSeconds(2));
+    }
+}
+
+async Task<RemoteConnection> TestRemoteConnectionAsync(string token)
+{
+    try
+    {
+        var connection = await client.TestConnectionAsync(token);
+        return new RemoteConnection(connection?.Authenticated == true, connection?.Username);
+    }
+    catch
+    {
+        return new RemoteConnection(false, null);
+    }
+}
 
 string? GetArgument(string name)
 {
@@ -88,9 +175,11 @@ string? GetArgument(string name)
 
 static bool IsGameRunning(string? gameDirectory, string gameType)
 {
-    var names = gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase)
+    var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase)
         ? new[] { "Rhythia", "Rhythia.exe" }
-        : new[] { "osu!", "osu", "osu!.exe", "osu.exe" };
+        : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)
+            ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe" }
+            : new[] { "osu!", "osu", "osu!.exe", "osu.exe" };
     try
     {
         foreach (var process in Process.GetProcesses())
@@ -118,24 +207,6 @@ static bool IsGameRunning(string? gameDirectory, string gameType)
     return false;
 }
 
-static async Task<RemoteConnection> TestRemoteConnectionAsync(string token)
-{
-    try
-    {
-        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-        var response = await client.GetAsync("https://rhythians.com/api/auth/me");
-        if (!response.IsSuccessStatusCode) return new RemoteConnection(false, null);
-        var data = await response.Content.ReadFromJsonAsync<UserResponse>();
-        return new RemoteConnection(true, data?.Username);
-    }
-    catch
-    {
-        return new RemoteConnection(false, null);
-    }
-}
-
 record RemoteConnection(bool Authenticated, string? Username);
 record LoginPayload(string? Token, string? Username, string? Game);
 record GamePayload(bool Running, string? Game);
-record UserResponse(string? Username);
