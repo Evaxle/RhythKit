@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -64,7 +65,7 @@ public sealed class SspScoreWatcher
                 var recordKey = CreateRecordKey(mapId, record);
                 if (!seenRecords.Add(recordKey)) continue;
                 var accuracy = Math.Clamp(record.HitNotes * 100.0 / record.TotalNotes, 0, 100);
-                var misses = Math.Max(0, record.TotalNotes - record.HitNotes);
+                var misses = Math.Max(0, (int)record.TotalNotes - (int)record.HitNotes);
                 await SubmitAsync(mapId, CreateScoreId(recordKey), accuracy, misses).ConfigureAwait(false);
             }
         }
