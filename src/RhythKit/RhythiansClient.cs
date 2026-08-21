@@ -37,8 +37,9 @@ public sealed class RhythiansClient(HttpClient httpClient)
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/rhythkit/scores") { Content = JsonContent.Create(score) };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<ScoreSubmissionResponse>(cancellationToken) ?? throw new InvalidOperationException("Invalid score response.");
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode) throw new InvalidOperationException(body);
+        return System.Text.Json.JsonSerializer.Deserialize<ScoreSubmissionResponse>(body) ?? throw new InvalidOperationException("Invalid score response.");
     }
 }
 
@@ -66,11 +67,13 @@ public sealed record ScoreSubmission(
     [property: JsonPropertyName("speed")] double? Speed,
     [property: JsonPropertyName("gameVersion")] string? GameVersion = null,
     [property: JsonPropertyName("integrationVersion")] string? IntegrationVersion = null,
-    [property: JsonPropertyName("completedAt")] DateTimeOffset? CompletedAt = null);
+    [property: JsonPropertyName("completedAt")] DateTimeOffset? CompletedAt = null,
+    [property: JsonPropertyName("resultQualified")] bool ResultQualified = false);
 
 public sealed record ScoreSubmissionResponse(
     [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("duplicate")] bool Duplicate,
+    [property: JsonPropertyName("alreadyCompleted")] bool AlreadyCompleted,
     [property: JsonPropertyName("counted")] bool Counted,
     [property: JsonPropertyName("points")] int Points,
     [property: JsonPropertyName("rhp")] int Rhp);
