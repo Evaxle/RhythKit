@@ -48,9 +48,9 @@ public static class RhythiansMapWatcher
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        yield return Path.Combine(appData, "CapoRhythia", "maps");
         yield return Path.Combine(appData, "Rhythia", "maps");
-        yield return Path.Combine(appData, "Rhythia", "Maps");
+        yield return Path.Combine(appData, "Rhythia", "cache", "maps");
+        yield return Path.Combine(appData, "Rhythians", "downloads");
         yield return Path.Combine(userProfile, "Downloads");
     }
 
@@ -66,7 +66,7 @@ public static class RhythiansMapWatcher
         var candidates = new[]
         {
             Path.Combine(root, stem + ".json"),
-            Path.Combine(Path.GetDirectoryName(root) ?? root, "cache", "maps", stem + ".json")
+            Path.Combine(root, "cache", "maps", stem + ".json")
         };
         foreach (var file in candidates)
         {
