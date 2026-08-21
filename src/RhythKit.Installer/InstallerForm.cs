@@ -63,8 +63,8 @@ public sealed class InstallerForm : Form
 
     private void AutoDetect()
     {
-        var candidates = SteamRhythiaLayout.FindInstalledPaths()
-            .Concat(SteamLibraryDetector.FindSteamLibraryPaths().Select(path => Path.Combine(path, "steamapps", "common", "Rhythia")))
+        var candidates = SteamLibraryDetector.FindSteamLibraryPaths()
+            .Select(path => Path.Combine(path, "steamapps", "common", "Rhythia"))
             .Concat(GetDefaultCandidates())
             .Distinct(StringComparer.OrdinalIgnoreCase);
 

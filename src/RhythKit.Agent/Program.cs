@@ -229,12 +229,6 @@ async Task<RemoteScoreResult> SubmitRemoteScoreAsync(string token, ScorePayload 
     }
 }
 
-string GetGameVersion()
-{
-    var version = GameConnectionState.Get().GameVersion;
-    return string.IsNullOrWhiteSpace(version) ? "unknown" : version;
-}
-
 void OpenRhythians()
 {
     try
