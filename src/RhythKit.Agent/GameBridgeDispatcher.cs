@@ -32,19 +32,21 @@ internal sealed class GameBridgeDispatcher : IDisposable
             message.Event));
 
         if (!string.Equals(message.Event, "MapCompleted", StringComparison.OrdinalIgnoreCase)) return;
-        if (!message.ResultQualified || string.IsNullOrWhiteSpace(message.MapId) || string.IsNullOrWhiteSpace(message.ClientScoreId)) return;
+        if (message.ResultQualified != true || string.IsNullOrWhiteSpace(message.MapId) || string.IsNullOrWhiteSpace(message.ClientScoreId)) return;
         if (message.Accuracy is null || message.Misses is null || message.Accuracy < 0 || message.Accuracy > 100 || message.Misses < 0) return;
         if (message.Speed is <= 0) return;
-        if (!RankedMapStore.Contains(message.MapId))
+
+        var mapId = message.MapId;
+        if (!RankedMapStore.Contains(mapId))
         {
-            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, message.MapId, "MapNotInstalled"));
+            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, mapId, "MapNotInstalled"));
             return;
         }
 
         var state = TokenStore.Load();
         if (string.IsNullOrWhiteSpace(state?.Token))
         {
-            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, message.MapId, "AuthenticationRequired"));
+            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, mapId, "AuthenticationRequired"));
             return;
         }
 
@@ -52,7 +54,7 @@ internal sealed class GameBridgeDispatcher : IDisposable
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", state.Token);
         request.Content = JsonContent.Create(new
         {
-            challengeMapId = message.MapId,
+            challengeMapId = mapId,
             clientScoreId = message.ClientScoreId,
             accuracy = message.Accuracy.Value,
             misses = message.Misses.Value,
@@ -67,11 +69,11 @@ internal sealed class GameBridgeDispatcher : IDisposable
         {
             using var response = await client.SendAsync(request);
             var eventName = response.IsSuccessStatusCode ? "ScoreSubmitted" : "ScoreRejected";
-            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, message.MapId, eventName));
+            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, mapId, eventName));
         }
         catch
         {
-            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, message.MapId, "ScoreSubmissionFailed"));
+            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, mapId, "ScoreSubmissionFailed"));
         }
     }
 
