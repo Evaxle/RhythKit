@@ -98,6 +98,7 @@ app.MapPost("/exit", () =>
 });
 
 var form = new RhythKitSettingsForm(gameDirectory ?? string.Empty, gameType);
+_ = app.RunAsync();
 _ = Task.Run(async () =>
 {
     var seenGame = false;
