@@ -1,12 +1,13 @@
-using System.Reflection;
-using System.Text.Json;
 using Godot;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace RhythKit;
 
 public static class RhythKitBootstrap
 {
     private static RhythiansClient? client;
+    private static RhythKitAgentBridge? bridge;
     private static string? token;
     private static string? username;
     private static bool initialized;
@@ -20,23 +21,57 @@ public static class RhythKitBootstrap
         if (initialized) return;
         initialized = true;
         client = RhythiansClient.CreateDefault();
+        bridge = new RhythKitAgentBridge();
         token = TokenStore.Load();
         RhythiansMapStore.Initialize();
         RhythiansMapWatcher.Start();
-        var tree = Engine.GetMainLoop() as SceneTree;
-        if (tree == null) return;
+
+        var version = RhythiaResultAdapter.GetGameVersion() ?? "unknown";
+        _ = ReportStateAsync(version);
+
+        if (Engine.GetMainLoop() is not SceneTree tree) return;
         tree.NodeAdded += OnNodeAdded;
+        tree.TreeChanged += OnTreeChanged;
         Callable.From(InstallGui).CallDeferred();
+    }
+
+    private static async Task ReportStateAsync(string version)
+    {
+        if (bridge == null) return;
+        try
+        {
+            await bridge.ReportStateAsync(new GameConnectionState(
+                true,
+                true,
+                true,
+                "Rhythia",
+                version,
+                "1",
+                null,
+                "IntegrationLoaded"));
+        }
+        catch (Exception exception)
+        {
+            GD.PrintErr($"[RhythKit] Agent connection failed: {exception.Message}");
+        }
     }
 
     private static void OnNodeAdded(Node node)
     {
-        if (node.GetType().Name == "MainMenu") Callable.From(InstallGui).CallDeferred();
+        if (node.GetType().Name == "MainMenu")
+            Callable.From(InstallGui).CallDeferred();
+
         if (node.GetType().Name == "Results")
         {
             resultQueued = false;
             Callable.From(ProcessResult).CallDeferred();
         }
+    }
+
+    private static void OnTreeChanged()
+    {
+        if (Engine.GetMainLoop() is SceneTree tree && tree.CurrentScene?.GetType().Name == "MainMenu")
+            Callable.From(InstallGui).CallDeferred();
     }
 
     private static void InstallGui()
@@ -65,35 +100,61 @@ public static class RhythKitBootstrap
     {
         var existing = parent.GetNodeOrNull<Button>(name);
         if (existing != null) return existing;
-        var button = new Button { Name = name, Text = text, CustomMinimumSize = new Vector2(0, 48) };
+        var button = new Button
+        {
+            Name = name,
+            Text = text,
+            CustomMinimumSize = new Vector2(0, 48)
+        };
         parent.AddChild(button);
         return button;
     }
 
-    private static void OnConnectPressed() { if (connectButton != null) _ = ConnectAsync(connectButton); }
-    private static void OnTestPressed() { _ = RefreshConnectionAsync(true); }
-    private static void OnMapsPressed() { try { RhythiansMapStore.OpenRoot(); } catch (Exception exception) { GD.PrintErr($"[RhythKit] {exception}"); } }
+    private static void OnConnectPressed()
+    {
+        if (connectButton != null) _ = ConnectAsync(connectButton);
+    }
+
+    private static void OnTestPressed()
+    {
+        _ = RefreshConnectionAsync(true);
+    }
+
+    private static void OnMapsPressed()
+    {
+        try
+        {
+            RhythiansMapStore.OpenRoot();
+        }
+        catch (Exception exception)
+        {
+            GD.PrintErr($"[RhythKit] {exception.Message}");
+        }
+    }
 
     private static async Task RefreshConnectionAsync(bool showResult = false)
     {
         if (client == null || statusButton == null) return;
         statusButton.Text = "Rhythians: Checking...";
+
         try
         {
             if (string.IsNullOrWhiteSpace(token)) throw new InvalidOperationException();
             var result = await client.TestConnectionAsync(token);
-            if (result?.Ok != true || result.Authenticated != true || string.IsNullOrWhiteSpace(result.Username)) throw new InvalidOperationException();
+            if (result?.Ok != true || result.Authenticated != true || string.IsNullOrWhiteSpace(result.Username))
+                throw new InvalidOperationException();
+
             username = result.Username;
             statusButton.Text = $"Rhythians: Connected ({username})";
             if (connectButton != null) connectButton.Visible = false;
-            if (showResult) GD.Print($"[RhythKit] Rhythians connection test passed for {username}.");
+            if (showResult) GD.Print($"[RhythKit] Connected as {username}.");
         }
         catch
         {
             username = null;
             statusButton.Text = "Rhythians: Not connected";
             if (connectButton != null) connectButton.Visible = true;
-            if (showResult) GD.PrintErr("[RhythKit] Rhythians connection test failed.");
+            if (showResult) GD.PrintErr("[RhythKit] Rhythians connection failed.");
         }
     }
 
@@ -109,64 +170,84 @@ public static class RhythKitBootstrap
         }
         catch (Exception exception)
         {
-            GD.PrintErr($"[RhythKit] {exception}");
+            GD.PrintErr($"[RhythKit] {exception.Message}");
             button.Visible = true;
-            statusButton!.Text = "Rhythians: Not connected";
+            if (statusButton != null) statusButton.Text = "Rhythians: Not connected";
         }
-        finally { button.Disabled = false; }
+        finally
+        {
+            button.Disabled = false;
+        }
     }
 
     private static async void ProcessResult()
     {
-        if (resultQueued || client == null) return;
+        if (resultQueued || bridge == null) return;
         resultQueued = true;
-        await Task.Yield();
+
         try
         {
-            if (string.IsNullOrWhiteSpace(token)) return;
-            var legacyRunner = FindType("LegacyRunner");
-            var attempt = legacyRunner?.GetProperty("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) ?? legacyRunner?.GetField("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
-            if (attempt == null || GetBool(attempt, "IsReplay") || !GetBool(attempt, "Alive") || !GetBool(attempt, "Qualifies")) return;
-            var map = GetValue(attempt, "Map");
-            var rhythiansMapId = RhythiansMapIdentity.Resolve(map);
-            var mapPath = GetString(map, "Path") ?? GetString(map, "FilePath") ?? GetString(map, "SourcePath");
-            if (rhythiansMapId == null && mapPath != null) rhythiansMapId = RhythiansMapIdentity.ResolveFromSspm(mapPath) ?? RhythiansMapIdentity.ResolveFromRhm(mapPath);
-            if (string.IsNullOrWhiteSpace(rhythiansMapId)) return;
-            RhythiansMapStore.Capture(map, rhythiansMapId);
-            var mapCheck = await RhythiansApi.CreateDefault().CheckMapAsync(token, rhythiansMapId);
-            if (mapCheck == null || !mapCheck.Eligible) return;
-            var score = new ScoreSubmission(mapCheck.Id, GetString(attempt, "ID") ?? Guid.NewGuid().ToString("N"), GetNullableDouble(attempt, "Accuracy"), GetNullableInt(attempt, "Misses"), GetNullableDouble(attempt, "Speed"));
-            var response = await client.SubmitScoreAsync(token, score);
-            GD.Print($"[RhythKit] Rhythians score submitted: {response.Points} RHP, total {response.Rhp} RHP.");
-        }
-        catch (Exception exception) { GD.PrintErr($"[RhythKit] Score submission failed: {exception}"); }
-    }
+            await Task.Yield();
+            if (!RhythiaResultAdapter.TryReadCompletion(out var completion) || completion == null) return;
+            if (!RhythiansMapStore.Contains(completion.MapId)) return;
 
-    private static Type? FindType(string name) => AppDomain.CurrentDomain.GetAssemblies().SelectMany(SafeTypes).FirstOrDefault(type => type.Name == name);
-    private static IEnumerable<Type> SafeTypes(Assembly assembly) { try { return assembly.GetTypes(); } catch { return []; } }
-    private static object? GetValue(object? target, string name)
-    {
-        if (target == null) return null;
-        var type = target.GetType();
-        return type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target) ?? type.GetField(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
+            var version = RhythiaResultAdapter.GetGameVersion() ?? "unknown";
+            var response = await bridge.ReportEventAsync(new GameEvent(
+                "MapCompleted",
+                true,
+                true,
+                true,
+                "Rhythia",
+                version,
+                "1",
+                completion.MapId,
+                completion.ResultId,
+                completion.Accuracy,
+                completion.Misses,
+                completion.Speed,
+                completion.Passed,
+                completion.Qualified,
+                completion.CompletedAt));
+
+            if (response?.LastEvent == "ScoreSubmissionFailed")
+                GD.PrintErr("[RhythKit] Score submission failed.");
+        }
+        catch (Exception exception)
+        {
+            GD.PrintErr($"[RhythKit] Score submission failed: {exception.Message}");
+        }
     }
-    private static string? GetString(object? target, string name) => GetValue(target, name)?.ToString();
-    private static bool GetBool(object? target, string name) => GetValue(target, name) is bool value && value;
-    private static double? GetNullableDouble(object? target, string name) => GetValue(target, name) switch { double value => value, float value => value, _ => null };
-    private static int? GetNullableInt(object? target, string name) => GetValue(target, name) switch { int value => value, uint value when value <= int.MaxValue => (int)value, _ => null };
 
     private static class TokenStore
     {
-        private sealed record State(string Token);
-        private static string Path => System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "Rhythians", "rhythkit.json");
+        private sealed record State(string Value);
+        private static readonly byte[] Entropy = "RhythKit"u8.ToArray();
+        private static string Path => System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Rhythians",
+            "rhythkit.token");
+
         public static string? Load()
         {
-            try { return File.Exists(Path) ? JsonSerializer.Deserialize<State>(File.ReadAllText(Path))?.Token : null; } catch { return null; }
+            try
+            {
+                if (!File.Exists(Path)) return null;
+                var protectedValue = File.ReadAllBytes(Path);
+                var value = ProtectedData.Unprotect(protectedValue, Entropy, DataProtectionScope.CurrentUser);
+                return JsonSerializer.Deserialize<State>(value)?.Value;
+            }
+            catch
+            {
+                return null;
+            }
         }
+
         public static void Save(string value)
         {
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
-            File.WriteAllText(Path, JsonSerializer.Serialize(new State(value)));
+            var data = JsonSerializer.SerializeToUtf8Bytes(new State(value));
+            var protectedValue = ProtectedData.Protect(data, Entropy, DataProtectionScope.CurrentUser);
+            File.WriteAllBytes(Path, protectedValue);
         }
     }
 }

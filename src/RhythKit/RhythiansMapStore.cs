@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -6,7 +7,7 @@ namespace RhythKit;
 
 public static class RhythiansMapStore
 {
-    public static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "Rhythians");
+    public static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rhythians");
     public static string MapsRoot => Path.Combine(Root, "maps");
 
     public static void Initialize() => Directory.CreateDirectory(MapsRoot);
@@ -17,16 +18,29 @@ public static class RhythiansMapStore
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = Root, UseShellExecute = true });
     }
 
+    public static bool Contains(string rhythiansId) => Find(rhythiansId) != null;
+
+    public static JsonObject? Find(string rhythiansId)
+    {
+        if (!Guid.TryParse(rhythiansId, out _) || !Directory.Exists(MapsRoot)) return null;
+        var folder = Path.Combine(MapsRoot, rhythiansId);
+        var metadataPath = Path.Combine(folder, "map.json");
+        if (!File.Exists(metadataPath)) return null;
+        try
+        {
+            var json = JsonNode.Parse(File.ReadAllText(metadataPath)) as JsonObject;
+            return string.Equals(json?["RhythiansId"]?.GetValue<string>(), rhythiansId, StringComparison.OrdinalIgnoreCase) ? json : null;
+        }
+        catch { return null; }
+    }
+
     public static void Capture(object? map, string rhythiansId)
     {
         if (map == null || string.IsNullOrWhiteSpace(rhythiansId)) return;
         try
         {
-            Initialize();
             var source = ReadString(map, "Path") ?? ReadString(map, "FilePath") ?? ReadString(map, "SourcePath");
             if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) return;
-            var extension = Path.GetExtension(source);
-            if (!extension.Equals(".sspm", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".rhm", StringComparison.OrdinalIgnoreCase)) return;
             var title = ReadString(map, "Title") ?? ReadString(map, "SongName") ?? ReadString(map, "Name") ?? "Rhythians Map";
             CaptureFile(source, rhythiansId, FindCacheMetadata(map, title), title, map);
         }
@@ -35,22 +49,39 @@ public static class RhythiansMapStore
 
     public static void CaptureFile(string source, string rhythiansId, JsonObject? metadata = null, string? title = null, object? map = null)
     {
-        if (string.IsNullOrWhiteSpace(source) || !File.Exists(source) || string.IsNullOrWhiteSpace(rhythiansId)) return;
+        if (string.IsNullOrWhiteSpace(source) || !File.Exists(source) || !Guid.TryParse(rhythiansId, out _)) return;
         try
         {
             Initialize();
             var extension = Path.GetExtension(source);
             if (!extension.Equals(".sspm", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".rhm", StringComparison.OrdinalIgnoreCase)) return;
             title ??= metadata?["Title"]?.GetValue<string>() ?? metadata?["SongName"]?.GetValue<string>() ?? "Rhythians Map";
-            var folder = CreateFolder(title, rhythiansId);
-            var destination = Path.Combine(folder, Path.GetFileName(source));
-            if (!File.Exists(destination)) File.Copy(source, destination);
+            var folder = Path.Combine(MapsRoot, rhythiansId);
+            Directory.CreateDirectory(folder);
+            var destination = Path.Combine(folder, "map" + extension.ToLowerInvariant());
+            if (!File.Exists(destination) || !FilesEqual(source, destination)) File.Copy(source, destination, true);
             metadata ??= map != null ? BuildMetadata(map, rhythiansId, source) : new JsonObject();
             metadata["RhythiansId"] = rhythiansId;
-            metadata["FilePath"] = source;
+            metadata["Title"] = title;
+            metadata["SourcePath"] = source;
+            metadata["ImportedAt"] = DateTimeOffset.UtcNow;
+            metadata["Sha256"] = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(destination)));
+            metadata["StoredFile"] = destination;
             File.WriteAllText(Path.Combine(folder, "map.json"), metadata.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         }
         catch { }
+    }
+
+    private static bool FilesEqual(string first, string second)
+    {
+        try
+        {
+            var a = new FileInfo(first);
+            var b = new FileInfo(second);
+            if (a.Length != b.Length) return false;
+            return CryptographicOperations.FixedTimeEquals(SHA256.HashData(File.ReadAllBytes(first)), SHA256.HashData(File.ReadAllBytes(second)));
+        }
+        catch { return false; }
     }
 
     private static JsonObject BuildMetadata(object map, string id, string source)
@@ -68,43 +99,33 @@ public static class RhythiansMapStore
             ["Difficulty"] = ReadNumber(map, "Difficulty"),
             ["CustomDifficultyName"] = ReadString(map, "CustomDifficultyName"),
             ["StarRating"] = ReadNumber(map, "StarRating"),
-            ["FilePath"] = source
+            ["SourcePath"] = source
         };
     }
 
     private static JsonObject? FindCacheMetadata(object map, string title)
     {
-        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "cache", "maps");
-        if (!Directory.Exists(root)) return null;
-        var names = new[] { ReadString(map, "Name"), title }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => Sanitize(x!)).Distinct(StringComparer.OrdinalIgnoreCase);
-        foreach (var name in names)
+        var userFolder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var roots = new[]
         {
-            var directory = Path.Combine(root, name);
-            if (!Directory.Exists(directory)) continue;
-            foreach (var file in Directory.EnumerateFiles(directory, "*.json", SearchOption.TopDirectoryOnly))
+            Path.Combine(userFolder, "Rhythia", "cache", "maps"),
+            Path.Combine(userFolder, "Rhythia", "maps")
+        };
+        var names = new[] { ReadString(map, "Name"), title }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => Sanitize(x!)).Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in roots)
+        {
+            if (!Directory.Exists(root)) continue;
+            foreach (var name in names)
             {
-                try
+                var directory = Path.Combine(root, name);
+                if (!Directory.Exists(directory)) continue;
+                foreach (var file in Directory.EnumerateFiles(directory, "*.json", SearchOption.TopDirectoryOnly))
                 {
-                    if (JsonNode.Parse(File.ReadAllText(file)) is JsonObject json) return json;
+                    try { if (JsonNode.Parse(File.ReadAllText(file)) is JsonObject json) return json; } catch { }
                 }
-                catch { }
             }
         }
         return null;
-    }
-
-    private static string CreateFolder(string title, string id)
-    {
-        var baseName = Sanitize(title);
-        var path = Path.Combine(MapsRoot, baseName);
-        if (!Directory.Exists(path)) return path;
-        try
-        {
-            var existing = JsonNode.Parse(File.ReadAllText(Path.Combine(path, "map.json"))) as JsonObject;
-            if (existing?["RhythiansId"]?.GetValue<string>() == id) return path;
-        }
-        catch { }
-        return Path.Combine(MapsRoot, $"{baseName} [{id}]");
     }
 
     private static string Sanitize(string value)
@@ -116,8 +137,7 @@ public static class RhythiansMapStore
 
     private static string? ReadString(object target, string name)
     {
-        try { return target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)?.GetValue(target)?.ToString(); }
-        catch { return null; }
+        try { return target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)?.GetValue(target)?.ToString(); } catch { return null; }
     }
 
     private static JsonArray? ReadArray(object target, string name)

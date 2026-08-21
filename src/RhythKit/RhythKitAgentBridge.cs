@@ -28,8 +28,10 @@ public sealed class RhythKitAgentBridge
     public async Task<ScoreSubmissionResponse> SubmitScoreAsync(ScoreSubmission score, CancellationToken cancellationToken = default)
     {
         using var response = await client.PostAsJsonAsync("/score", score, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<ScoreSubmissionResponse>(cancellationToken) ?? throw new InvalidOperationException("Invalid score response.");
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(body);
+        return System.Text.Json.JsonSerializer.Deserialize<ScoreSubmissionResponse>(body) ?? throw new InvalidOperationException("Invalid score response.");
     }
 }
 
@@ -39,6 +41,7 @@ public sealed record GameConnectionState(
     bool MapCaptureReady,
     string? Game,
     string? GameVersion,
+    string? IntegrationVersion,
     string? MapId,
     string? LastEvent);
 
@@ -49,4 +52,23 @@ public sealed record GameEvent(
     bool? MapCaptureReady = null,
     string? Game = null,
     string? GameVersion = null,
-    string? MapId = null);
+    string? IntegrationVersion = null,
+    string? MapId = null,
+    string? ResultId = null,
+    double? Accuracy = null,
+    int? Misses = null,
+    double? Speed = null,
+    bool? Passed = null,
+    bool? ResultQualified = null,
+    DateTimeOffset? CompletedAt = null);
+
+public sealed record GameConnectionSnapshot(
+    bool Running,
+    bool IntegrationConnected,
+    bool MapCaptureReady,
+    string? Game,
+    string? GameVersion,
+    string? IntegrationVersion,
+    string? MapId,
+    string? LastEvent,
+    DateTimeOffset LastSeenAt);

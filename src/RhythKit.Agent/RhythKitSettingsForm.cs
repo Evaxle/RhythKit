@@ -8,6 +8,8 @@ public sealed class RhythKitSettingsForm : Form
     private readonly string gameDirectory;
     private readonly string gameType;
     private readonly Label statusLabel = new() { AutoSize = true, Text = "Rhythians: Checking..." };
+    private readonly Label integrationLabel = new() { AutoSize = true, Text = "Game integration: Checking..." };
+    private readonly Label mapLabel = new() { AutoSize = true, Text = "Map capture: Checking..." };
     private readonly Label gameLabel = new() { AutoSize = true };
     private readonly Button connectButton = new() { Text = "Connect Rhythians", AutoSize = true };
     private readonly Button testButton = new() { Text = "Test Connection", AutoSize = true };
@@ -21,8 +23,8 @@ public sealed class RhythKitSettingsForm : Form
         this.gameType = gameType;
         Text = "RhythKit Settings";
         Width = 520;
-        Height = 280;
-        MinimumSize = new Size(520, 280);
+        Height = 320;
+        MinimumSize = new Size(520, 320);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -40,6 +42,8 @@ public sealed class RhythKitSettingsForm : Form
         info.Controls.Add(title);
         info.Controls.Add(gameLabel);
         info.Controls.Add(statusLabel);
+        info.Controls.Add(integrationLabel);
+        info.Controls.Add(mapLabel);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(20, 0, 20, 20) };
         buttons.Controls.Add(connectButton);
@@ -98,10 +102,19 @@ public sealed class RhythKitSettingsForm : Form
                 statusLabel.Text = "Rhythians: Not connected";
                 connectButton.Visible = true;
             }
+
+            integrationLabel.Text = result?.IntegrationConnected == true
+                ? "Game integration: Connected"
+                : "Game integration: Not connected";
+            mapLabel.Text = result?.MapCaptureReady == true
+                ? $"Map capture: Ready{(string.IsNullOrWhiteSpace(result.MapId) ? string.Empty : $" ({result.MapId})")}"
+                : "Map capture: Not ready";
         }
         catch
         {
             statusLabel.Text = "RhythKit: Starting...";
+            integrationLabel.Text = "Game integration: Unknown";
+            mapLabel.Text = "Map capture: Unknown";
             connectButton.Visible = true;
             if (showFailure) MessageBox.Show(this, "RhythKit could not contact its local agent.", "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
@@ -151,6 +164,6 @@ public sealed class RhythKitSettingsForm : Form
         Close();
     }
 
-    private sealed record StatusResponse(bool Installed, bool Running, bool Authenticated, string? Username, string? Game);
+    private sealed record StatusResponse(bool Installed, bool Running, bool GameRunning, bool LoggedIn, bool Connected, bool Authenticated, string? Username, string? Game, bool IntegrationConnected, bool MapCaptureReady, string? MapId, string? LastEvent, DateTimeOffset LastSeenAt);
     private sealed record AuthStartResponse(string DeviceCode, string UserCode, string VerificationUrl, int ExpiresIn, string? GameVersion);
 }

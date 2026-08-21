@@ -18,33 +18,40 @@ public static class RhythiansMapWatcher
         while (true)
         {
             try { Scan(); } catch { }
-            await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
         }
     }
 
     private static void Scan()
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var capo = Path.Combine(appData, "CapoRhythia");
-        var maps = Path.Combine(capo, "maps");
-        var cache = Path.Combine(capo, "cache", "maps");
-        if (!Directory.Exists(maps)) return;
-
-        foreach (var source in Directory.EnumerateFiles(maps, "*.sspm", SearchOption.AllDirectories))
+        RhythiansMapStore.Initialize();
+        foreach (var root in GetMapRoots())
         {
-            var id = RhythiansMapIdentity.ResolveFromSspm(source);
-            if (string.IsNullOrWhiteSpace(id) || !IsRhythiansDownload(source, id)) continue;
-            var stem = Path.GetFileNameWithoutExtension(source);
-            var metadata = FindMetadata(cache, stem);
-            var title = metadata?["Title"]?.GetValue<string>() ?? metadata?["SongName"]?.GetValue<string>() ?? GetTitleFromFileName(source, id);
-            RhythiansMapStore.CaptureFile(source, id, metadata, title);
+            if (!Directory.Exists(root)) continue;
+            foreach (var source in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories))
+            {
+                var extension = Path.GetExtension(source);
+                if (!extension.Equals(".sspm", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".rhm", StringComparison.OrdinalIgnoreCase)) continue;
+                var id = extension.Equals(".sspm", StringComparison.OrdinalIgnoreCase)
+                    ? RhythiansMapIdentity.ResolveFromSspm(source)
+                    : RhythiansMapIdentity.ResolveFromRhm(source);
+                if (!Guid.TryParse(id, out _)) continue;
+                var stem = Path.GetFileNameWithoutExtension(source);
+                var metadata = FindMetadata(root, stem);
+                var title = metadata?["Title"]?.GetValue<string>() ?? metadata?["SongName"]?.GetValue<string>() ?? GetTitleFromFileName(source, id!);
+                RhythiansMapStore.CaptureFile(source, id!, metadata, title);
+            }
         }
     }
 
-    private static bool IsRhythiansDownload(string source, string id)
+    private static IEnumerable<string> GetMapRoots()
     {
-        var stem = Path.GetFileNameWithoutExtension(source);
-        return stem.StartsWith($"rhythians-{id}-", StringComparison.OrdinalIgnoreCase);
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        yield return Path.Combine(appData, "Rhythia", "maps");
+        yield return Path.Combine(appData, "Rhythia", "cache", "maps");
+        yield return Path.Combine(appData, "Rhythians", "downloads");
+        yield return Path.Combine(userProfile, "Downloads");
     }
 
     private static string GetTitleFromFileName(string source, string id)
@@ -56,10 +63,15 @@ public static class RhythiansMapWatcher
 
     private static JsonObject? FindMetadata(string root, string stem)
     {
-        var exact = Path.Combine(root, stem + ".json");
-        if (File.Exists(exact))
+        var candidates = new[]
         {
-            try { return JsonNode.Parse(File.ReadAllText(exact)) as JsonObject; } catch { }
+            Path.Combine(root, stem + ".json"),
+            Path.Combine(root, "cache", "maps", stem + ".json")
+        };
+        foreach (var file in candidates)
+        {
+            if (!File.Exists(file)) continue;
+            try { return JsonNode.Parse(File.ReadAllText(file)) as JsonObject; } catch { }
         }
         return null;
     }
