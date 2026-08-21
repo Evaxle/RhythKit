@@ -16,7 +16,7 @@ public static class RhythiaPatcher
         var method = type?.Methods.FirstOrDefault(x => x.Name == "_Ready");
         if (method == null) throw new InvalidOperationException("Could not find Rhythia._Ready in Rhythia.dll.");
 
-        var bootstrap = assembly.MainModule.ImportReference(typeof(RhythKit.RhythKitBootstrap).GetMethod(nameof(RhythKit.RhythKitBootstrap.Initialize))!);
+        var bootstrap = FindBootstrap(assembly.MainModule);
         if (method.Body.Instructions.Any(x => x.OpCode == OpCodes.Call && x.Operand is MethodReference reference && reference.FullName == bootstrap.FullName)) return assemblyPath;
 
         method.Body.Instructions.Insert(0, Instruction.Create(OpCodes.Call, bootstrap));
@@ -30,7 +30,7 @@ public static class RhythiaPatcher
     {
         using var assembly = AssemblyDefinition.ReadAssembly(assemblyPath, new ReaderParameters { ReadWrite = false });
         var method = assembly.MainModule.Types.FirstOrDefault(x => x.FullName == "Rhythia")?.Methods.FirstOrDefault(x => x.Name == "_Ready");
-        return method?.Body.Instructions.Any(x => x.Operand is MethodReference reference && reference.FullName.Contains("RhythKit.RhythKitBootstrap::Initialize", StringComparison.Ordinal)) == true;
+        return method?.Body.Instructions.Any(x => x.Operand is MethodReference reference && reference.DeclaringType.FullName == "RhythKit.RhythKitBootstrap" && reference.Name == "Initialize") == true;
     }
 
     public static string FindRhythiaAssembly(string gameDirectory)
@@ -39,5 +39,13 @@ public static class RhythiaPatcher
         if (File.Exists(direct)) return direct;
         var matches = Directory.EnumerateFiles(gameDirectory, "Rhythia.dll", SearchOption.AllDirectories).ToArray();
         return matches.FirstOrDefault() ?? throw new FileNotFoundException("Rhythia.dll was not found in the selected game directory.");
+    }
+
+    private static MethodReference FindBootstrap(ModuleDefinition module)
+    {
+        var type = module.Types.FirstOrDefault(x => x.FullName == "RhythKit.RhythKitBootstrap");
+        var method = type?.Methods.FirstOrDefault(x => x.Name == "Initialize" && !x.HasParameters);
+        if (method == null) throw new InvalidOperationException("Rhythia.dll does not contain RhythKit.RhythKitBootstrap.Initialize. The selected Rhythia build is not compatible with this installer.");
+        return module.ImportReference(method);
     }
 }
