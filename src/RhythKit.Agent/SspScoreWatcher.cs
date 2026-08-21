@@ -130,7 +130,7 @@ public sealed class SspScoreWatcher
         if (state == null || string.IsNullOrWhiteSpace(state.Token)) return;
         using var client = new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") };
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", state.Token);
-        var body = new { challengeMapId = mapId, clientScoreId, accuracy, misses, speed = (double?)null };
+        var body = new { challengeMapId = mapId, clientScoreId, accuracy, misses, speed = (double?)null, resultQualified = true };
         try
         {
             await client.PostAsJsonAsync("api/rhythkit/scores", body).ConfigureAwait(false);
