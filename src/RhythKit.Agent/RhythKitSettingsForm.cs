@@ -14,6 +14,7 @@ public sealed class RhythKitSettingsForm : Form
     private readonly TextBox serverUrlBox = new() { Width = 420 };
     private readonly Button saveServerButton = new() { Text = "Save Server URL", AutoSize = true };
     private readonly Button connectButton = new() { Text = "Connect Rhythians", AutoSize = true };
+    private readonly Button reconnectButton = new() { Text = "Reconnect Rhythians Account", AutoSize = true };
     private readonly Button testButton = new() { Text = "Test Connection", AutoSize = true };
     private readonly Button mapsButton = new() { Text = "Open Maps", AutoSize = true };
     private readonly System.Windows.Forms.Timer timer;
@@ -36,6 +37,7 @@ public sealed class RhythKitSettingsForm : Form
         SetLogoIcon();
         gameLabel.Text = $"Game: {DisplayGame(gameType)}";
         connectButton.Click += async (_, _) => await ConnectAsync();
+        reconnectButton.Click += (_, _) => ReconnectAccount();
         testButton.Click += async (_, _) => await RefreshAsync(true);
         saveServerButton.Click += async (_, _) => await SaveServerUrlAsync();
         mapsButton.Click += (_, _) => OpenMaps();
@@ -54,6 +56,7 @@ public sealed class RhythKitSettingsForm : Form
         info.Controls.Add(serverRow);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(20, 0, 20, 20) };
         buttons.Controls.Add(connectButton);
+        buttons.Controls.Add(reconnectButton);
         buttons.Controls.Add(testButton);
         buttons.Controls.Add(mapsButton);
         Controls.Add(buttons);
@@ -169,6 +172,28 @@ public sealed class RhythKitSettingsForm : Form
         }
         catch (Exception exception) { MessageBox.Show(this, exception.Message, "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally { connectButton.Enabled = true; await RefreshAsync(false); }
+    }
+
+    private void ReconnectAccount()
+    {
+        try
+        {
+            TokenStore.Clear();
+            statusLabel.Text = "Rhythians: Not connected";
+            connectButton.Visible = true;
+            reconnectButton.Enabled = false;
+            var serverUrl = string.IsNullOrWhiteSpace(serverUrlBox.Text) ? "https://rhythians.vercel.app" : serverUrlBox.Text.TrimEnd('/');
+            var url = $"{serverUrl}/settings?rhythkitReconnect=1&game={Uri.EscapeDataString(gameType)}";
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            reconnectButton.Enabled = true;
+        }
     }
 
     private void OpenMaps()
