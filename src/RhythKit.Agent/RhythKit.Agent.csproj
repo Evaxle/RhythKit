@@ -10,8 +10,12 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <InvariantGlobalization>true</InvariantGlobalization>
     <ApplicationIcon>..\..\rhythkitlogo.ico</ApplicationIcon>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="RhythKitSettingsForm.cs" />
+    <Compile Include="SspScoreWatcher.cs" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <Content Include="..\..\rhythkitlogo.ico" Link="rhythkitlogo.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
