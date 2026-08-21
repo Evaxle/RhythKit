@@ -19,6 +19,8 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.Se
 var app = builder.Build();
 app.UseCors();
 using var client = new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app"), Timeout = TimeSpan.FromSeconds(10) };
+using var gameBridgeDispatcher = new GameBridgeDispatcher();
+gameBridgeDispatcher.Start();
 var authorizationRunning = 0;
 
 app.MapGet("/status", async () =>
