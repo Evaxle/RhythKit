@@ -15,10 +15,12 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.Se
 var app = builder.Build();
 app.UseCors();
 
-app.MapGet("/status", () =>
+app.MapGet("/status", async () =>
 {
     var state = TokenStore.Load();
-    return Results.Json(new { installed = true, running = true, authenticated = !string.IsNullOrWhiteSpace(state?.Token), game = state?.Game ?? "unknown" });
+    if (string.IsNullOrWhiteSpace(state?.Token)) return Results.Json(new { installed = true, running = true, authenticated = false, username = (string?)null, game = state?.Game ?? "unknown" });
+    var connection = await TestRemoteConnectionAsync(state.Token);
+    return Results.Json(new { installed = true, running = true, authenticated = connection.Authenticated, username = connection.Username, game = state.Game });
 });
 
 app.MapPost("/game", async (HttpRequest request) =>
@@ -47,6 +49,20 @@ var watcher = new RhythKit.Agent.SspScoreWatcher(gameDirectory, app.Lifetime.App
 if (gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)) _ = watcher.RunAsync();
 _ = MonitorGameAsync(gameDirectory, gameType, app.Lifetime.ApplicationStopping);
 app.Run();
+
+static async Task<RemoteConnection> TestRemoteConnectionAsync(string token)
+{
+    try
+    {
+        using var client = new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") };
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.GetAsync("api/rhythkit/status");
+        if (!response.IsSuccessStatusCode) return new RemoteConnection(false, null);
+        var result = await response.Content.ReadFromJsonAsync<RemoteStatus>();
+        return new RemoteConnection(result?.Authenticated == true, result?.Username);
+    }
+    catch { return new RemoteConnection(false, null); }
+}
 
 static async Task<IResult> StartAuthorizationAsync(string gameType)
 {
@@ -191,6 +207,8 @@ record ScoreRequest(string challengeMapId, string clientScoreId, double? accurac
 record AuthPoll(string DeviceCode);
 record AuthStartResponse(string DeviceCode, string UserCode, string VerificationUrl, int ExpiresIn, string? GameVersion);
 record AuthResponse(string Status, string? Token, string? InstallationId);
+record RemoteStatus(bool Ok, bool Authenticated, string? Username);
+record RemoteConnection(bool Authenticated, string? Username);
 record TokenState(string Token, string Game);
 
 static class TokenStore

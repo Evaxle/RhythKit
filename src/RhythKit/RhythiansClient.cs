@@ -23,6 +23,15 @@ public sealed class RhythiansClient(HttpClient httpClient)
         return await response.Content.ReadFromJsonAsync<DeviceTokenResponse>(cancellationToken);
     }
 
+    public async Task<RhythiansConnectionResponse?> TestConnectionAsync(string token, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/rhythkit/status");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode) return null;
+        return await response.Content.ReadFromJsonAsync<RhythiansConnectionResponse>(cancellationToken);
+    }
+
     public async Task<ScoreSubmissionResponse> SubmitScoreAsync(string token, ScoreSubmission score, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/rhythkit/scores") { Content = JsonContent.Create(score) };
@@ -43,6 +52,11 @@ public sealed record DeviceTokenResponse(
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("token")] string? Token,
     [property: JsonPropertyName("installationId")] string? InstallationId);
+
+public sealed record RhythiansConnectionResponse(
+    [property: JsonPropertyName("ok")] bool Ok,
+    [property: JsonPropertyName("authenticated")] bool Authenticated,
+    [property: JsonPropertyName("username")] string? Username);
 
 public sealed record ScoreSubmission(
     [property: JsonPropertyName("challengeMapId")] string ChallengeMapId,
