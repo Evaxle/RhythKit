@@ -50,6 +50,9 @@ if (gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)) _ = watch
 _ = MonitorGameAsync(gameDirectory, gameType, app.Lifetime.ApplicationStopping);
 app.Run();
 
+static RhythKitSettingsForm? settingsForm;
+static int settingsWindowActive;
+
 static async Task<RemoteConnection> TestRemoteConnectionAsync(string token)
 {
     try
@@ -93,12 +96,49 @@ static async Task MonitorGameAsync(string? gameDirectory, string gameType, Cance
         try
         {
             var running = IsGameRunning(gameDirectory, gameType);
-            if (running && !wasRunning && !TokenStore.IsAuthenticated()) await BeginBrowserAuthorizationAsync(gameType, cancellationToken);
+            if (running && !wasRunning)
+            {
+                ShowSettingsWindow(gameDirectory ?? string.Empty, gameType);
+                if (!TokenStore.IsAuthenticated()) await BeginBrowserAuthorizationAsync(gameType, cancellationToken);
+            }
+            else if (!running && wasRunning)
+            {
+                CloseSettingsWindow();
+            }
             wasRunning = running;
         }
         catch { }
         await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
     }
+}
+
+static void ShowSettingsWindow(string gameDirectory, string gameType)
+{
+    if (Interlocked.Exchange(ref settingsWindowActive, 1) != 0) return;
+    var thread = new Thread(() =>
+    {
+        try
+        {
+            ApplicationConfiguration.Initialize();
+            settingsForm = new RhythKitSettingsForm(gameDirectory, gameType);
+            Application.Run(settingsForm);
+        }
+        finally
+        {
+            settingsForm = null;
+            Interlocked.Exchange(ref settingsWindowActive, 0);
+        }
+    });
+    thread.IsBackground = true;
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start();
+}
+
+static void CloseSettingsWindow()
+{
+    var form = settingsForm;
+    if (form == null) return;
+    try { form.CloseFromGameExit(); } catch { }
 }
 
 static bool IsGameRunning(string? gameDirectory, string gameType)
