@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -15,6 +16,27 @@ public static class RhythiansMapStore
     {
         Initialize();
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = Root, UseShellExecute = true });
+    }
+
+    public static bool Contains(string rhythiansId)
+    {
+        return Find(rhythiansId) != null;
+    }
+
+    public static JsonObject? Find(string rhythiansId)
+    {
+        if (string.IsNullOrWhiteSpace(rhythiansId) || !Directory.Exists(MapsRoot)) return null;
+        foreach (var folder in Directory.EnumerateDirectories(MapsRoot))
+        {
+            var metadataPath = Path.Combine(folder, "map.json");
+            if (!File.Exists(metadataPath)) continue;
+            try
+            {
+                if (JsonNode.Parse(File.ReadAllText(metadataPath)) is JsonObject json && string.Equals(json["RhythiansId"]?.GetValue<string>(), rhythiansId, StringComparison.OrdinalIgnoreCase)) return json;
+            }
+            catch { }
+        }
+        return null;
     }
 
     public static void Capture(object? map, string rhythiansId)
@@ -44,13 +66,28 @@ public static class RhythiansMapStore
             title ??= metadata?["Title"]?.GetValue<string>() ?? metadata?["SongName"]?.GetValue<string>() ?? "Rhythians Map";
             var folder = CreateFolder(title, rhythiansId);
             var destination = Path.Combine(folder, Path.GetFileName(source));
-            if (!File.Exists(destination)) File.Copy(source, destination);
+            if (!File.Exists(destination) || !FilesEqual(source, destination)) File.Copy(source, destination, true);
             metadata ??= map != null ? BuildMetadata(map, rhythiansId, source) : new JsonObject();
             metadata["RhythiansId"] = rhythiansId;
-            metadata["FilePath"] = source;
+            metadata["SourcePath"] = source;
+            metadata["ImportedAt"] = DateTimeOffset.UtcNow;
+            metadata["Sha256"] = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(destination)));
+            metadata["StoredFile"] = destination;
             File.WriteAllText(Path.Combine(folder, "map.json"), metadata.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         }
         catch { }
+    }
+
+    private static bool FilesEqual(string first, string second)
+    {
+        try
+        {
+            var a = new FileInfo(first);
+            var b = new FileInfo(second);
+            if (a.Length != b.Length) return false;
+            return CryptographicOperations.FixedTimeEquals(SHA256.HashData(File.ReadAllBytes(first)), SHA256.HashData(File.ReadAllBytes(second)));
+        }
+        catch { return false; }
     }
 
     private static JsonObject BuildMetadata(object map, string id, string source)
@@ -68,7 +105,7 @@ public static class RhythiansMapStore
             ["Difficulty"] = ReadNumber(map, "Difficulty"),
             ["CustomDifficultyName"] = ReadString(map, "CustomDifficultyName"),
             ["StarRating"] = ReadNumber(map, "StarRating"),
-            ["FilePath"] = source
+            ["SourcePath"] = source
         };
     }
 
