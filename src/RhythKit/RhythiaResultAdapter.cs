@@ -2,36 +2,28 @@ using System.Reflection;
 
 namespace RhythKit;
 
-public sealed record RhythiaCompletion(
-    string MapId,
-    string ResultId,
-    double Accuracy,
-    int Misses,
-    double Speed,
-    bool Passed,
-    bool Qualified,
-    DateTimeOffset CompletedAt);
-
 public static class RhythiaResultAdapter
 {
-    private static readonly BindingFlags StaticFlags = BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase;
-    private static readonly BindingFlags InstanceFlags = BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase;
+    private const BindingFlags InstanceFlags = BindingFlags.Public | BindingFlags.Instance;
+    private const BindingFlags StaticFlags = BindingFlags.Public | BindingFlags.Static;
     private static Type? legacyRunnerType;
 
-    public static bool TryReadCompletion(out RhythiaCompletion? completion)
+    public static bool TryReadCompletion(object? attempt, out RhythiaCompletion? completion)
     {
         completion = null;
-        var runner = FindLegacyRunner();
-        var attempt = GetMember(runner, "CurrentAttempt");
-        if (attempt == null || GetBool(attempt, "IsReplay") || !GetBool(attempt, "Alive") || !GetBool(attempt, "Qualifies")) return false;
+        if (attempt == null) return false;
 
-        var passed = GetOptionalBool(attempt, "Passed") ?? GetBool(attempt, "Alive") && GetBool(attempt, "Qualifies");
-        if (!passed) return false;
+        var alive = GetBool(attempt, "Alive");
+        var qualifies = GetBool(attempt, "Qualifies");
+        var isReplay = GetBool(attempt, "IsReplay");
+        var passed = GetOptionalBool(attempt, "Passed") ?? qualifies;
+        if (!alive || !qualifies || isReplay) return false;
 
         var map = GetMember(attempt, "Map");
-        var mapId = RhythiansMapIdentity.Resolve(map);
+        var mapId = GetString(attempt, "MapID") ?? GetString(attempt, "MapId");
+        if (string.IsNullOrWhiteSpace(mapId)) mapId = RhythiansMapIdentity.Resolve(map);
         var path = GetString(map, "Path") ?? GetString(map, "FilePath") ?? GetString(map, "SourcePath");
-        if (mapId == null && path != null)
+        if (string.IsNullOrWhiteSpace(mapId) && path != null)
             mapId = RhythiansMapIdentity.ResolveFromSspm(path) ?? RhythiansMapIdentity.ResolveFromRhm(path);
         if (!Guid.TryParse(mapId, out _)) return false;
 
@@ -48,7 +40,7 @@ public static class RhythiaResultAdapter
             resultId,
             accuracy.Value,
             misses.Value,
-            speed.Value,
+            speed,
             passed,
             true,
             DateTimeOffset.UtcNow);
@@ -99,15 +91,8 @@ public static class RhythiaResultAdapter
     }
 
     private static string? GetString(object? target, string name) => GetMember(target, name)?.ToString();
-
     private static bool GetBool(object? target, string name) => GetMember(target, name) is bool value && value;
-
-    private static bool? GetOptionalBool(object? target, string name) => GetMember(target, name) switch
-    {
-        bool value => value,
-        _ => null
-    };
-
+    private static bool? GetOptionalBool(object? target, string name) => GetMember(target, name) switch { bool value => value, _ => null };
     private static double? GetDouble(object? target, string name) => GetMember(target, name) switch
     {
         double value => value,
@@ -118,12 +103,13 @@ public static class RhythiaResultAdapter
         long value => value,
         _ => null
     };
-
     private static int? GetInt(object? target, string name) => GetMember(target, name) switch
     {
         int value => value,
         uint value when value <= int.MaxValue => (int)value,
-        long value when value >= 0 && value <= int.MaxValue => (int)value,
+        short value => value,
+        ushort value => value,
+        long value when value is >= int.MinValue and <= int.MaxValue => (int)value,
         _ => null
     };
 }
