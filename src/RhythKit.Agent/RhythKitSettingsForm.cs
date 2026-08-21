@@ -27,6 +27,7 @@ public sealed class RhythKitSettingsForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         ShowInTaskbar = true;
+        Visible = false;
         SetLogoIcon();
 
         gameLabel.Text = $"Game: {gameType}";
