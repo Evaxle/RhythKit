@@ -7,6 +7,7 @@ namespace RhythKit;
 public static class RhythKitBootstrap
 {
     private static RhythiansClient? client;
+    private static RhythKitAgentBridge? bridge;
     private static string? token;
     private static string? username;
     private static bool initialized;
@@ -20,9 +21,11 @@ public static class RhythKitBootstrap
         if (initialized) return;
         initialized = true;
         client = RhythiansClient.CreateDefault();
+        bridge = new RhythKitAgentBridge();
         token = TokenStore.Load();
         RhythiansMapStore.Initialize();
         RhythiansMapWatcher.Start();
+        _ = bridge.ReportStateAsync(new GameConnectionState(true, true, true, "Rhythia", GetGameVersion(), null, "IntegrationLoaded"));
         var tree = Engine.GetMainLoop() as SceneTree;
         if (tree == null) return;
         tree.NodeAdded += OnNodeAdded;
@@ -118,12 +121,11 @@ public static class RhythKitBootstrap
 
     private static async void ProcessResult()
     {
-        if (resultQueued || client == null) return;
+        if (resultQueued || bridge == null) return;
         resultQueued = true;
         await Task.Yield();
         try
         {
-            if (string.IsNullOrWhiteSpace(token)) return;
             var legacyRunner = FindType("LegacyRunner");
             var attempt = legacyRunner?.GetProperty("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) ?? legacyRunner?.GetField("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
             if (attempt == null || GetBool(attempt, "IsReplay") || !GetBool(attempt, "Alive") || !GetBool(attempt, "Qualifies")) return;
@@ -133,13 +135,31 @@ public static class RhythKitBootstrap
             if (rhythiansMapId == null && mapPath != null) rhythiansMapId = RhythiansMapIdentity.ResolveFromSspm(mapPath) ?? RhythiansMapIdentity.ResolveFromRhm(mapPath);
             if (string.IsNullOrWhiteSpace(rhythiansMapId)) return;
             RhythiansMapStore.Capture(map, rhythiansMapId);
-            var mapCheck = await RhythiansApi.CreateDefault().CheckMapAsync(token, rhythiansMapId);
-            if (mapCheck == null || !mapCheck.Eligible) return;
-            var score = new ScoreSubmission(mapCheck.Id, GetString(attempt, "ID") ?? Guid.NewGuid().ToString("N"), GetNullableDouble(attempt, "Accuracy"), GetNullableInt(attempt, "Misses"), GetNullableDouble(attempt, "Speed"));
-            var response = await client.SubmitScoreAsync(token, score);
-            GD.Print($"[RhythKit] Rhythians score submitted: {response.Points} RHP, total {response.Rhp} RHP.");
+            var accuracy = GetNullableDouble(attempt, "Accuracy");
+            var misses = GetNullableInt(attempt, "Misses");
+            if (accuracy == null || misses == null) return;
+            await bridge.ReportEventAsync(new GameEvent("MapCompleted", true, true, true, "Rhythia", GetGameVersion(), rhythiansMapId));
+            var score = new ScoreSubmission(
+                rhythiansMapId,
+                GetString(attempt, "ID") ?? Guid.NewGuid().ToString("N"),
+                accuracy,
+                misses,
+                GetNullableDouble(attempt, "Speed"),
+                GetGameVersion(),
+                "1",
+                DateTimeOffset.UtcNow);
+            var response = await bridge.SubmitScoreAsync(score);
+            var message = response.Counted ? "CompletionAwarded" : response.Duplicate ? "CompletionAlreadyRecorded" : "ScoreProcessed";
+            await bridge.ReportEventAsync(new GameEvent(message, true, true, true, "Rhythia", GetGameVersion(), rhythiansMapId));
+            GD.Print($"[RhythKit] {message}: {response.Points} RHP, total {response.Rhp} RHP.");
         }
         catch (Exception exception) { GD.PrintErr($"[RhythKit] Score submission failed: {exception}"); }
+    }
+
+    private static string GetGameVersion()
+    {
+        var version = typeof(RhythKitBootstrap).Assembly.GetName().Version?.ToString();
+        return string.IsNullOrWhiteSpace(version) ? "unknown" : version;
     }
 
     private static Type? FindType(string name) => AppDomain.CurrentDomain.GetAssemblies().SelectMany(SafeTypes).FirstOrDefault(type => type.Name == name);
