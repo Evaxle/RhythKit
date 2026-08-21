@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
@@ -6,6 +7,7 @@ using System.Windows.Forms;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using RhythKit.Agent;
 
@@ -14,7 +16,7 @@ var gameType = GetArgument("--game-type") ?? "unknown";
 TokenStore.SaveGame(gameType);
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://127.0.0.1:45872");
+builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, AgentPorts.For(gameType)));
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.SetIsOriginAllowed(origin => origin.StartsWith("https://rhythians.vercel.app", StringComparison.OrdinalIgnoreCase) || origin.StartsWith("https://rhythians.com", StringComparison.OrdinalIgnoreCase)).AllowAnyHeader().AllowAnyMethod()));
 var app = builder.Build();
 app.UseCors();
@@ -27,10 +29,9 @@ app.MapGet("/status", async () =>
     var gameRunning = IsGameRunning(gameDirectory, gameType);
     var game = GameConnectionState.Get();
     if (string.IsNullOrWhiteSpace(state?.Token))
-        return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = false, connected = false, authenticated = false, username = (string?)null, game = state?.Game ?? gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion });
+        return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = false, connected = false, authenticated = false, username = (string?)null, game = gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion });
     var connection = await TestRemoteConnectionAsync(state.Token);
-    var connected = connection.Authenticated;
-    return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected, authenticated = connection.Authenticated, username = connection.Username, game = state.Game, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion });
+    return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected = connection.Authenticated, authenticated = connection.Authenticated, username = connection.Username, game = gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion });
 });
 
 app.MapGet("/game/status", () => Results.Json(GameConnectionState.Get()));
@@ -39,7 +40,6 @@ app.MapPost("/game", async (HttpRequest request) =>
 {
     var payload = await request.ReadFromJsonAsync<GamePayload>();
     if (payload == null) return Results.BadRequest(new { error = "Invalid game state." });
-    if (payload.Running) TokenStore.SaveGame(payload.Game ?? gameType);
     GameConnectionState.Update(new GameConnectionUpdate(payload.Running, payload.IntegrationConnected, payload.MapCaptureReady, payload.Game ?? gameType, payload.GameVersion, payload.MapId, payload.LastEvent));
     return Results.Ok(GameConnectionState.Get());
 });
@@ -48,7 +48,6 @@ app.MapPost("/game/event", async (HttpRequest request) =>
 {
     var payload = await request.ReadFromJsonAsync<GameEventPayload>();
     if (payload == null || string.IsNullOrWhiteSpace(payload.Event)) return Results.BadRequest(new { error = "Invalid game event." });
-
     var current = GameConnectionState.Get();
     var running = payload.Running ?? current.Running;
     var integrationConnected = payload.IntegrationConnected ?? current.IntegrationConnected;
@@ -56,23 +55,13 @@ app.MapPost("/game/event", async (HttpRequest request) =>
     var game = payload.Game ?? current.Game ?? gameType;
     var version = payload.GameVersion ?? current.GameVersion;
     var mapId = payload.MapId ?? current.MapId;
-
     GameConnectionState.Update(new GameConnectionUpdate(running, integrationConnected, mapCaptureReady, game, version, mapId, payload.Event));
-
-    if (!string.Equals(payload.Event, "MapCompleted", StringComparison.OrdinalIgnoreCase))
-        return Results.Ok(GameConnectionState.Get());
-
-    if (!payload.ResultQualified || payload.Passed != true || string.IsNullOrWhiteSpace(payload.MapId) || string.IsNullOrWhiteSpace(payload.ResultId))
-        return Results.Conflict(new { error = "The game result did not qualify." });
-    if (payload.Accuracy is null or < 0 or > 100 || payload.Misses is null or < 0 || payload.Speed is <= 0)
-        return Results.BadRequest(new { error = "Invalid score values." });
-    if (!RankedMapStore.Contains(payload.MapId!))
-        return Results.NotFound(new { error = "The map is not installed as a Rhythians map." });
-
+    if (!string.Equals(payload.Event, "MapCompleted", StringComparison.OrdinalIgnoreCase)) return Results.Ok(GameConnectionState.Get());
+    if (!payload.ResultQualified || payload.Passed != true || string.IsNullOrWhiteSpace(payload.MapId) || string.IsNullOrWhiteSpace(payload.ResultId)) return Results.Conflict(new { error = "The game result did not qualify." });
+    if (payload.Accuracy is null or < 0 or > 100 || payload.Misses is null or < 0 || payload.Speed is <= 0) return Results.BadRequest(new { error = "Invalid score values." });
+    if (!gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) && !RankedMapStore.Contains(payload.MapId!)) return Results.NotFound(new { error = "The map is not installed as a Rhythians map." });
     var state = TokenStore.Load();
-    if (string.IsNullOrWhiteSpace(state?.Token))
-        return Results.Unauthorized();
-
+    if (string.IsNullOrWhiteSpace(state?.Token)) return Results.Unauthorized();
     var result = await SubmitRemoteScoreAsync(state.Token, new ScorePayload(payload.MapId!, payload.ResultId!, payload.Accuracy.Value, payload.Misses.Value, payload.Speed, version, payload.IntegrationVersion, payload.CompletedAt, true));
     GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, payload.MapId, result.Success ? (result.AlreadyCompleted ? "CompletionAlreadyRecorded" : "ScoreSubmitted") : "ScoreRejected"));
     return Results.Content(result.Body, "application/json", System.Text.Encoding.UTF8, result.StatusCode);
@@ -81,16 +70,40 @@ app.MapPost("/game/event", async (HttpRequest request) =>
 app.MapPost("/score", async (HttpRequest request) =>
 {
     var payload = await request.ReadFromJsonAsync<ScorePayload>();
-    if (payload == null || string.IsNullOrWhiteSpace(payload.ChallengeMapId) || string.IsNullOrWhiteSpace(payload.ClientScoreId))
-        return Results.BadRequest(new { error = "challengeMapId and clientScoreId are required." });
-    if (payload.Accuracy is < 0 or > 100 || payload.Misses < 0 || payload.Speed is <= 0)
-        return Results.BadRequest(new { error = "Invalid score values." });
+    if (payload == null || string.IsNullOrWhiteSpace(payload.ChallengeMapId) || string.IsNullOrWhiteSpace(payload.ClientScoreId)) return Results.BadRequest(new { error = "challengeMapId and clientScoreId are required." });
+    if (payload.Accuracy is < 0 or > 100 || payload.Misses < 0 || payload.Speed is <= 0) return Results.BadRequest(new { error = "Invalid score values." });
     if (!payload.ResultQualified) return Results.Conflict(new { error = "The game did not qualify this result." });
-    if (!RankedMapStore.Contains(payload.ChallengeMapId)) return Results.NotFound(new { error = "The map is not installed as a Rhythians map." });
+    if (!gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) && !RankedMapStore.Contains(payload.ChallengeMapId)) return Results.NotFound(new { error = "The map is not installed as a Rhythians map." });
     var state = TokenStore.Load();
     if (string.IsNullOrWhiteSpace(state?.Token)) return Results.Unauthorized();
     var result = await SubmitRemoteScoreAsync(state.Token, payload);
     return Results.Content(result.Body, "application/json", System.Text.Encoding.UTF8, result.StatusCode);
+});
+
+app.MapPost("/vulnus/convert", async (HttpRequest request) =>
+{
+    if (!gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase)) return Results.BadRequest(new { error = "This agent is not installed for Vulnus." });
+    if (string.IsNullOrWhiteSpace(gameDirectory)) return Results.BadRequest(new { error = "Vulnus installation directory is not configured." });
+    if (!request.HasFormContentType) return Results.BadRequest(new { error = "An SSPM file upload is required." });
+    var form = await request.ReadFormAsync();
+    var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+    if (file == null || file.Length == 0) return Results.BadRequest(new { error = "An SSPM file upload is required." });
+    if (!string.Equals(Path.GetExtension(file.FileName), ".sspm", StringComparison.OrdinalIgnoreCase)) return Results.BadRequest(new { error = "Only .sspm files can be converted." });
+    var temp = Path.Combine(Path.GetTempPath(), $"rhythkit-{Guid.NewGuid():N}.sspm");
+    try
+    {
+        await using (var stream = File.Create(temp)) await file.CopyToAsync(stream);
+        var result = await VulnusConverterLauncher.ConvertAsync(gameDirectory, temp);
+        return result.Success ? Results.Ok(new { ok = true, message = result.Message, path = result.OutputPath }) : Results.BadRequest(new { ok = false, error = result.Message });
+    }
+    catch (Exception exception)
+    {
+        return Results.Problem(exception.Message, statusCode: 500);
+    }
+    finally
+    {
+        try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+    }
 });
 
 app.MapPost("/auth/start", async () =>
@@ -187,10 +200,7 @@ async Task<RemoteConnection> TestRemoteConnectionAsync(string token)
         var result = await response.Content.ReadFromJsonAsync<RhythiansConnectionResponse>();
         return new RemoteConnection(result?.Authenticated == true, result?.Username);
     }
-    catch
-    {
-        return new RemoteConnection(false, null);
-    }
+    catch { return new RemoteConnection(false, null); }
 }
 
 async Task<RemoteScoreResult> SubmitRemoteScoreAsync(string token, ScorePayload payload)
@@ -205,10 +215,7 @@ async Task<RemoteScoreResult> SubmitRemoteScoreAsync(string token, ScorePayload 
         var result = System.Text.Json.JsonSerializer.Deserialize<ScoreResultBody>(body);
         return new RemoteScoreResult(response.IsSuccessStatusCode, (int)response.StatusCode, body, result?.AlreadyCompleted == true);
     }
-    catch
-    {
-        return new RemoteScoreResult(false, (int)System.Net.HttpStatusCode.BadGateway, "{\"error\":\"Rhythians could not be reached.\"}", false);
-    }
+    catch { return new RemoteScoreResult(false, 502, "{\"error\":\"Rhythians could not be reached.\"}", false); }
 }
 
 void OpenRhythians()
@@ -225,14 +232,13 @@ void OpenRhythians()
 string? GetArgument(string name)
 {
     var args = Environment.GetCommandLineArgs();
-    for (var i = 0; i < args.Length - 1; i++)
-        if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
+    for (var i = 0; i < args.Length - 1; i++) if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
     return null;
 }
 
 static bool IsGameRunning(string? gameDirectory, string gameType)
 {
-    var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase) ? new[] { "rhythia", "rhythia.exe" } : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase) ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe" } : new[] { "osu!", "osu", "osu!.exe", "osu.exe" };
+    var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase) ? new[] { "rhythia", "rhythia.exe" } : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase) ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe" } : gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) ? new[] { "Vulnus", "Vulnus.exe" } : Array.Empty<string>();
     try
     {
         foreach (var process in Process.GetProcesses())
