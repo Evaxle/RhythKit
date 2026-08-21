@@ -5,11 +5,14 @@ namespace RhythKit.Agent;
 
 internal sealed class GameBridgeDispatcher : IDisposable
 {
-    private readonly HttpClient client = new() { BaseAddress = new Uri("https://rhythians.vercel.app"), Timeout = TimeSpan.FromSeconds(10) };
+    private readonly HttpClient client;
     private readonly GameBridgeInbox inbox;
 
     public GameBridgeDispatcher()
     {
+        var settings = TokenStore.LoadSettings();
+        var endpoint = string.IsNullOrWhiteSpace(settings.RhythiansServerUrl) ? "https://rhythians.vercel.app" : settings.RhythiansServerUrl.TrimEnd('/');
+        client = new HttpClient { BaseAddress = new Uri(endpoint), Timeout = TimeSpan.FromSeconds(10) };
         inbox = new GameBridgeInbox(GetGameType(), HandleAsync);
     }
 
@@ -20,6 +23,7 @@ internal sealed class GameBridgeDispatcher : IDisposable
         var game = message.Game ?? "Rhythia";
         var version = message.GameVersion ?? "unknown";
         GameConnectionState.Update(new GameConnectionUpdate(message.Running ?? true, message.IntegrationConnected ?? true, message.MapCaptureReady ?? !string.IsNullOrWhiteSpace(message.MapId), game, version, message.MapId, message.Event));
+        GameConnectionState.AddDebug(message.Event ?? "GameEvent", "Game integration event received.", message.MapId, new { message.ClientScoreId, message.Accuracy, message.Misses, message.Speed, message.ResultQualified, message.CompletedAt });
         if (!string.Equals(message.Event, "MapCompleted", StringComparison.OrdinalIgnoreCase)) return;
         if (message.ResultQualified != true || string.IsNullOrWhiteSpace(message.MapId) || string.IsNullOrWhiteSpace(message.ClientScoreId)) return;
         if (message.Accuracy is null || message.Accuracy < 0 || message.Accuracy > 100 || message.Misses is null || message.Misses < 0 || message.Speed is <= 0) return;
@@ -40,10 +44,12 @@ internal sealed class GameBridgeDispatcher : IDisposable
         try
         {
             using var response = await client.SendAsync(request);
+            GameConnectionState.AddDebug(response.IsSuccessStatusCode ? "ScoreSubmitted" : "ScoreRejected", response.IsSuccessStatusCode ? "Completion submitted to Rhythians." : "Rhythians rejected the completion.", message.MapId, new { statusCode = (int)response.StatusCode });
             GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, message.MapId, response.IsSuccessStatusCode ? "ScoreSubmitted" : "ScoreRejected"));
         }
-        catch
+        catch (Exception exception)
         {
+            GameConnectionState.AddDebug("ScoreSubmissionFailed", exception.Message, message.MapId);
             GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, message.MapId, "ScoreSubmissionFailed"));
         }
     }
