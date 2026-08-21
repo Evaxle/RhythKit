@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Godot;
 
@@ -78,6 +79,7 @@ public static class RhythKitBootstrap
     {
         if (client == null || statusButton == null) return;
         statusButton.Text = "Rhythians: Checking...";
+        token = TokenStore.Load();
         try
         {
             if (string.IsNullOrWhiteSpace(token)) throw new InvalidOperationException();
@@ -104,7 +106,7 @@ public static class RhythKitBootstrap
         try
         {
             token = await new RhythKitConnection(client).ConnectAsync();
-            TokenStore.Save(token);
+            TokenStore.Save(token, username);
             await RefreshConnectionAsync();
         }
         catch (Exception exception)
@@ -123,6 +125,7 @@ public static class RhythKitBootstrap
         await Task.Yield();
         try
         {
+            token = TokenStore.Load();
             if (string.IsNullOrWhiteSpace(token)) return;
             var legacyRunner = FindType("LegacyRunner");
             var attempt = legacyRunner?.GetProperty("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) ?? legacyRunner?.GetField("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
@@ -157,21 +160,29 @@ public static class RhythKitBootstrap
 
     private static class TokenStore
     {
-        private sealed record State(string Token);
-        private static readonly byte[] Entropy = "RhythKit"u8.ToArray();
-        private static string Path => System.IO.Path.Combine(
-            System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),
-            "Rhythians",
-            "rhythkit.token");
+        private sealed record State(string Token, string? Username, string? Game);
+        private static string Path => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rhythians", "rhythkit.json");
+
         public static string? Load()
         {
-            try { return File.Exists(Path) ? JsonSerializer.Deserialize<State>(File.ReadAllBytes(Path))?.Token : null; }
+            try
+            {
+                if (!File.Exists(Path)) return null;
+                var state = JsonSerializer.Deserialize<State>(File.ReadAllBytes(Path));
+                if (state == null || string.IsNullOrWhiteSpace(state.Token)) return null;
+                var encrypted = Convert.FromBase64String(state.Token);
+                var token = System.Text.Encoding.UTF8.GetString(ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser));
+                return token;
+            }
             catch { return null; }
         }
-        public static void Save(string value)
+
+        public static void Save(string value, string? username)
         {
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
-            File.WriteAllBytes(Path, JsonSerializer.SerializeToUtf8Bytes(new State(value)));
+            var encrypted = ProtectedData.Protect(System.Text.Encoding.UTF8.GetBytes(value), null, DataProtectionScope.CurrentUser);
+            var state = new State(Convert.ToBase64String(encrypted), username, "Rhythia");
+            File.WriteAllBytes(Path, JsonSerializer.SerializeToUtf8Bytes(state));
         }
     }
 }
