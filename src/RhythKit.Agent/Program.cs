@@ -50,9 +50,6 @@ if (gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)) _ = watch
 _ = MonitorGameAsync(gameDirectory, gameType, app.Lifetime.ApplicationStopping);
 app.Run();
 
-static RhythKitSettingsForm? settingsForm;
-static int settingsWindowActive;
-
 static async Task<RemoteConnection> TestRemoteConnectionAsync(string token)
 {
     try
@@ -114,19 +111,19 @@ static async Task MonitorGameAsync(string? gameDirectory, string gameType, Cance
 
 static void ShowSettingsWindow(string gameDirectory, string gameType)
 {
-    if (Interlocked.Exchange(ref settingsWindowActive, 1) != 0) return;
+    if (Interlocked.Exchange(ref SettingsWindowState.Active, 1) != 0) return;
     var thread = new Thread(() =>
     {
         try
         {
             ApplicationConfiguration.Initialize();
-            settingsForm = new RhythKitSettingsForm(gameDirectory, gameType);
-            Application.Run(settingsForm);
+            SettingsWindowState.Form = new RhythKitSettingsForm(gameDirectory, gameType);
+            Application.Run(SettingsWindowState.Form);
         }
         finally
         {
-            settingsForm = null;
-            Interlocked.Exchange(ref settingsWindowActive, 0);
+            SettingsWindowState.Form = null;
+            Interlocked.Exchange(ref SettingsWindowState.Active, 0);
         }
     });
     thread.IsBackground = true;
@@ -136,7 +133,7 @@ static void ShowSettingsWindow(string gameDirectory, string gameType)
 
 static void CloseSettingsWindow()
 {
-    var form = settingsForm;
+    var form = SettingsWindowState.Form;
     if (form == null) return;
     try { form.CloseFromGameExit(); } catch { }
 }
@@ -250,6 +247,12 @@ record AuthResponse(string Status, string? Token, string? InstallationId);
 record RemoteStatus(bool Ok, bool Authenticated, string? Username);
 record RemoteConnection(bool Authenticated, string? Username);
 record TokenState(string Token, string Game);
+
+static class SettingsWindowState
+{
+    public static RhythKitSettingsForm? Form;
+    public static int Active;
+}
 
 static class TokenStore
 {
