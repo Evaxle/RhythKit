@@ -8,9 +8,9 @@ internal static class VulnusConverterLauncher
 {
     public static async Task<(bool Success, string? OutputPath, string Message)> ConvertAsync(string gameDirectory, string sourcePath)
     {
-        var vulnusMapsDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vulnus", "maps");
+        var legacyMapsDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vulnus", "maps");
         var gameMapsDirectory = Path.Combine(gameDirectory, "maps");
-        Directory.CreateDirectory(vulnusMapsDirectory);
+        Directory.CreateDirectory(legacyMapsDirectory);
         Directory.CreateDirectory(gameMapsDirectory);
         var executable = FindExecutable(gameDirectory);
         if (executable == null) return (false, null, "Vulnus.exe was not found in the selected installation.");
@@ -26,10 +26,7 @@ internal static class VulnusConverterLauncher
         if (process == null) return (false, null, "Vulnus could not be started for conversion.");
         await process.WaitForExitAsync();
         if (process.ExitCode != 0) return (false, null, "Vulnus rejected the SSPM conversion.");
-        var output = Directory.EnumerateFiles(vulnusMapsDirectory, "rhythians_*.vul", SearchOption.TopDirectoryOnly)
-            .Where(path => File.GetLastWriteTimeUtc(path) >= startedAt.AddSeconds(-1))
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault();
+        var output = FindConvertedArchive(legacyMapsDirectory, gameMapsDirectory, startedAt);
         if (output == null) return (false, null, "Vulnus completed without producing a map.");
         var folderName = Path.GetFileNameWithoutExtension(output);
         var destination = Path.Combine(gameMapsDirectory, folderName);
@@ -49,6 +46,16 @@ internal static class VulnusConverterLauncher
             if (Directory.Exists(destination)) Directory.Delete(destination, true);
             throw;
         }
+    }
+
+    private static string? FindConvertedArchive(string legacyMapsDirectory, string gameMapsDirectory, DateTime startedAt)
+    {
+        return new[] { legacyMapsDirectory, gameMapsDirectory }
+            .Where(Directory.Exists)
+            .SelectMany(directory => Directory.EnumerateFiles(directory, "rhythians_*.vul", SearchOption.TopDirectoryOnly))
+            .Where(path => File.GetLastWriteTimeUtc(path) >= startedAt.AddSeconds(-1))
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
     }
 
     private static void ExtractMapArchive(string archivePath, string destination)
