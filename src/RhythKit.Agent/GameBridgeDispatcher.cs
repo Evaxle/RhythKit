@@ -13,67 +13,38 @@ internal sealed class GameBridgeDispatcher : IDisposable
         inbox = new GameBridgeInbox(HandleAsync);
     }
 
-    public void Start()
-    {
-        inbox.Start();
-    }
+    public void Start() => inbox.Start();
 
     private async Task HandleAsync(GameBridgeMessage message)
     {
         var game = message.Game ?? "Rhythia";
         var version = message.GameVersion ?? "unknown";
-        GameConnectionState.Update(new GameConnectionUpdate(
-            message.Running ?? true,
-            message.IntegrationConnected ?? true,
-            message.MapCaptureReady ?? !string.IsNullOrWhiteSpace(message.MapId),
-            game,
-            version,
-            message.MapId,
-            message.Event));
-
+        GameConnectionState.Update(new GameConnectionUpdate(message.Running ?? true, message.IntegrationConnected ?? true, message.MapCaptureReady ?? !string.IsNullOrWhiteSpace(message.MapId), game, version, message.MapId, message.Event));
         if (!string.Equals(message.Event, "MapCompleted", StringComparison.OrdinalIgnoreCase)) return;
         if (message.ResultQualified != true || string.IsNullOrWhiteSpace(message.MapId) || string.IsNullOrWhiteSpace(message.ClientScoreId)) return;
-        if (message.Accuracy is null || message.Misses is null || message.Accuracy < 0 || message.Accuracy > 100 || message.Misses < 0) return;
-        if (message.Speed is <= 0) return;
-
-        var mapId = message.MapId;
-        if (!RankedMapStore.Contains(mapId))
+        if (message.Accuracy is null || message.Accuracy < 0 || message.Accuracy > 100 || message.Misses is null || message.Misses < 0 || message.Speed is <= 0) return;
+        if (!string.Equals(game, "Vulnus", StringComparison.OrdinalIgnoreCase) && !RankedMapStore.Contains(message.MapId))
         {
-            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, mapId, "MapNotInstalled"));
+            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, message.MapId, "MapNotInstalled"));
             return;
         }
-
         var state = TokenStore.Load();
         if (string.IsNullOrWhiteSpace(state?.Token))
         {
-            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, mapId, "AuthenticationRequired"));
+            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, message.MapId, "AuthenticationRequired"));
             return;
         }
-
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/rhythkit/scores");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", state.Token);
-        request.Content = JsonContent.Create(new
-        {
-            challengeMapId = mapId,
-            clientScoreId = message.ClientScoreId,
-            accuracy = message.Accuracy.Value,
-            misses = message.Misses.Value,
-            speed = message.Speed,
-            gameVersion = version,
-            integrationVersion = "1",
-            completedAt = message.CompletedAt ?? DateTimeOffset.UtcNow,
-            resultQualified = true
-        });
-
+        request.Content = JsonContent.Create(new { challengeMapId = message.MapId, clientScoreId = message.ClientScoreId, accuracy = message.Accuracy.Value, misses = message.Misses.Value, speed = message.Speed, gameVersion = version, integrationVersion = "1", completedAt = message.CompletedAt ?? DateTimeOffset.UtcNow, resultQualified = true });
         try
         {
             using var response = await client.SendAsync(request);
-            var eventName = response.IsSuccessStatusCode ? "ScoreSubmitted" : "ScoreRejected";
-            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, mapId, eventName));
+            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, message.MapId, response.IsSuccessStatusCode ? "ScoreSubmitted" : "ScoreRejected"));
         }
         catch
         {
-            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, mapId, "ScoreSubmissionFailed"));
+            GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, message.MapId, "ScoreSubmissionFailed"));
         }
     }
 
