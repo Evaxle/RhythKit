@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Windows.Forms;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 
 var gameDirectory = GetArgument("--game-dir");
 var gameType = GetArgument("--game-type") ?? "unknown";
@@ -52,7 +55,6 @@ static async Task<IResult> StartAuthorizationAsync(string gameType)
     using var client = new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app/") };
     var result = await client.PostAsJsonAsync("api/rhythkit/device/start", new { gameVersion = gameType });
     var json = await result.Content.ReadAsStringAsync();
-    if (!result.IsSuccessStatusCode) return Results.Content(json, "application/json", System.Text.Encoding.UTF8, (int)result.StatusCode);
     return Results.Content(json, "application/json", System.Text.Encoding.UTF8, (int)result.StatusCode);
 }
 
@@ -110,6 +112,25 @@ static string[] GetTargetProcessNames(string? gameDirectory, string gameType)
 {
     if (!string.IsNullOrWhiteSpace(gameDirectory))
     {
+        var jsonBridge = Path.Combine(gameDirectory, "RhythKit", "RhythKitBridge.json");
+        if (File.Exists(jsonBridge))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(jsonBridge));
+                if (document.RootElement.TryGetProperty("executable", out var executable))
+                {
+                    var path = executable.GetString();
+                    if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                    {
+                        var name = Path.GetFileNameWithoutExtension(path);
+                        if (!string.IsNullOrWhiteSpace(name)) return new[] { name };
+                    }
+                }
+            }
+            catch { }
+        }
+
         var bridge = Path.Combine(gameDirectory, "RhythKit", "RhythKitBridge.txt");
         if (File.Exists(bridge))
         {

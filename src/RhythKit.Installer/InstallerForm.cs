@@ -92,13 +92,17 @@ public sealed class InstallerForm : Form
         install.Enabled = false;
         try
         {
-            var payload = RhythKitPayload.Data;
-            if (payload.Length == 0) throw new InvalidOperationException("The installer was not built with the RhythKit payload. Run build.ps1.");
-
             var modDirectory = Path.Combine(path, "RhythKit");
             Directory.CreateDirectory(modDirectory);
-            var hash = Convert.ToHexString(SHA256.HashData(payload));
-            await File.WriteAllBytesAsync(Path.Combine(modDirectory, "RhythKit.dll"), payload);
+
+            string? hash = null;
+            if (target == RhythiaTarget.LegacyManaged)
+            {
+                var payload = RhythKitPayload.Data;
+                if (payload.Length == 0) throw new InvalidOperationException("The installer was not built with the RhythKit payload. Run build.ps1.");
+                hash = Convert.ToHexString(SHA256.HashData(payload));
+                await File.WriteAllBytesAsync(Path.Combine(modDirectory, "RhythKit.dll"), payload);
+            }
 
             var agentSource = Path.Combine(AppContext.BaseDirectory, "RhythKit.Agent.exe");
             var uninstallerSource = Path.Combine(AppContext.BaseDirectory, "RhythKit.Uninstaller.exe");
@@ -114,7 +118,7 @@ public sealed class InstallerForm : Form
             switch (target)
             {
                 case RhythiaTarget.LegacyManaged:
-                    InstallLegacy(path, payload);
+                    InstallLegacy(path, RhythKitPayload.Data);
                     break;
                 case RhythiaTarget.SspNightly:
                     await InstallSspNightlyAsync(path);
@@ -163,10 +167,21 @@ public sealed class InstallerForm : Form
 
     private static void InstallSteam(string gameDirectory)
     {
-        var exe = GameDetector.FindExecutable(gameDirectory, "rhythia.exe");
-        if (exe == null) throw new FileNotFoundException("rhythia.exe was not found.");
-        var bridge = Path.Combine(gameDirectory, "RhythKit", "RhythKitBridge.txt");
-        File.WriteAllText(bridge, "Rhythia Steam integration target detected.\n" + exe);
+        if (!SteamRhythiaLayout.Matches(gameDirectory))
+        {
+            var missing = SteamRhythiaLayout.FindMissingFile(gameDirectory);
+            throw new InvalidOperationException(missing == null ? "The selected folder is not a supported Steam Rhythia installation." : $"Steam Rhythia is missing {missing}.");
+        }
+
+        var bridge = Path.Combine(gameDirectory, "RhythKit", "RhythKitBridge.json");
+        var state = new
+        {
+            target = "RhythiaSteam",
+            executable = SteamRhythiaLayout.ExecutablePath(gameDirectory),
+            integration = "agent",
+            installedAt = DateTimeOffset.UtcNow
+        };
+        File.WriteAllText(bridge, JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private static async Task InstallSspNightlyAsync(string gameDirectory)
@@ -204,8 +219,8 @@ static class GameDetector
     public static RhythiaTarget Detect(string directory)
     {
         if (!Directory.Exists(directory)) return RhythiaTarget.Unknown;
+        if (SteamRhythiaLayout.Matches(directory)) return RhythiaTarget.RhythiaSteam;
         if (FindExecutable(directory, "sound-space-plus.exe", "Sound Space Plus.exe", "SSP.exe") != null || Directory.EnumerateFiles(directory, "*.pck", SearchOption.TopDirectoryOnly).Any(x => Path.GetFileName(x).Contains("ssp", StringComparison.OrdinalIgnoreCase))) return RhythiaTarget.SspNightly;
-        if (FindExecutable(directory, "rhythia.exe") != null) return RhythiaTarget.RhythiaSteam;
         if (File.Exists(Path.Combine(directory, "Rhythia.dll")) || Directory.EnumerateFiles(directory, "Rhythia.dll", SearchOption.AllDirectories).Any()) return RhythiaTarget.LegacyManaged;
         return RhythiaTarget.Unknown;
     }
