@@ -10,7 +10,11 @@
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <ApplicationIcon>../../rhythkitlogo.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="../../rhythkitlogo.ico" Link="rhythkitlogo.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Mono.Cecil" Version="0.11.6" />
   </ItemGroup>
