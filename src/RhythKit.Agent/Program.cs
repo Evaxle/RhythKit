@@ -66,7 +66,7 @@ app.MapPost("/game/event", async (HttpRequest request) =>
         return Results.Conflict(new { error = "The game result did not qualify." });
     if (payload.Accuracy is null or < 0 or > 100 || payload.Misses is null or < 0 || payload.Speed is <= 0)
         return Results.BadRequest(new { error = "Invalid score values." });
-    if (!RankedMapStore.Contains(payload.MapId))
+    if (!RankedMapStore.Contains(payload.MapId!))
         return Results.NotFound(new { error = "The map is not installed as a Rhythians map." });
 
     var state = TokenStore.Load();
@@ -74,8 +74,8 @@ app.MapPost("/game/event", async (HttpRequest request) =>
         return Results.Unauthorized();
 
     var result = await SubmitRemoteScoreAsync(state.Token, new ScorePayload(
-        payload.MapId,
-        payload.ResultId,
+        payload.MapId!,
+        payload.ResultId!,
         payload.Accuracy.Value,
         payload.Misses.Value,
         payload.Speed,
@@ -128,118 +128,57 @@ app.MapPost("/auth/start", async () =>
 app.MapPost("/login", async (HttpRequest request) =>
 {
     var payload = await request.ReadFromJsonAsync<LoginPayload>();
-    if (string.IsNullOrWhiteSpace(payload?.Token)) return Results.BadRequest(new { error = "Token is required." });
-    var username = payload.Username;
-    if (string.IsNullOrWhiteSpace(username))
-    {
-        var connection = await TestRemoteConnectionAsync(payload.Token);
-        if (!connection.Authenticated) return Results.Unauthorized();
-        username = connection.Username;
-    }
-    TokenStore.Save(payload.Token, username, payload.Game ?? gameType);
-    return Results.Ok(new { loggedIn = true, username, game = payload.Game ?? gameType });
+    if (payload == null || string.IsNullOrWhiteSpace(payload.Token)) return Results.BadRequest(new { error = "token is required." });
+    TokenStore.Save(payload.Token, payload.Username, payload.Game ?? gameType);
+    return Results.Ok(new { ok = true });
 });
 
 app.MapPost("/logout", () =>
 {
     TokenStore.Clear();
-    return Results.Ok(new { loggedIn = false });
+    return Results.Ok(new { ok = true });
 });
 
-app.MapGet("/settings", () => Results.Json(TokenStore.LoadSettings()));
-app.MapPost("/settings", async (HttpRequest request) =>
+app.MapPost("/open", () =>
 {
-    var settings = await request.ReadFromJsonAsync<AgentSettings>() ?? new AgentSettings();
-    TokenStore.SaveSettings(settings);
-    return Results.Ok(settings);
+    OpenRhythians();
+    return Results.Ok(new { ok = true });
 });
 
-app.MapPost("/exit", () =>
+app.MapPost("/shutdown", () =>
 {
-    _ = Task.Run(() =>
-    {
-        Thread.Sleep(100);
-        Environment.Exit(0);
-    });
-    return Results.Ok();
+    Environment.Exit(0);
+    return Results.Ok(new { ok = true });
 });
 
-var form = new RhythKitSettingsForm(gameDirectory ?? string.Empty, gameType);
-_ = app.RunAsync();
-_ = Task.Run(async () =>
-{
-    var seenGame = false;
-    while (true)
-    {
-        var running = IsGameRunning(gameDirectory, gameType);
-        if (running)
-        {
-            if (!seenGame)
-            {
-                seenGame = true;
-                form.ShowForGame();
-                OpenRhythians();
-            }
-            if (string.IsNullOrWhiteSpace(TokenStore.Load()?.Token)) _ = EnsureAuthorizationAsync();
-        }
-        else if (seenGame)
-        {
-            form.CloseFromGameExit();
-            GameConnectionState.Update(new GameConnectionUpdate(false, false, false, gameType, null, null, "GameExited"));
-            await Task.Delay(250);
-            Environment.Exit(0);
-            return;
-        }
-        await Task.Delay(2000);
-    }
-});
-
-Application.Run(form);
-
-async Task EnsureAuthorizationAsync()
-{
-    if (!string.IsNullOrWhiteSpace(TokenStore.Load()?.Token)) return;
-    if (Interlocked.Exchange(ref authorizationRunning, 1) == 1) return;
-    try
-    {
-        var authorization = await StartDeviceAuthorizationAsync();
-        Process.Start(new ProcessStartInfo { FileName = authorization.VerificationUrl, UseShellExecute = true });
-        await CompleteAuthorizationAsync(authorization);
-    }
-    catch { }
-    finally { Interlocked.Exchange(ref authorizationRunning, 0); }
-}
+using var dispatcher = new GameBridgeDispatcher();
+dispatcher.Start();
+await app.RunAsync();
 
 async Task<DeviceAuthorization> StartDeviceAuthorizationAsync()
 {
-    using var response = await client.PostAsJsonAsync("/api/rhythkit/device/start", new { gameVersion = GetGameVersion() });
-    response.EnsureSuccessStatusCode();
-    return await response.Content.ReadFromJsonAsync<DeviceAuthorization>() ?? throw new InvalidOperationException("Invalid authorization response.");
+    using var response = await client.PostAsync("/api/rhythkit/device", null);
+    var body = await response.Content.ReadAsStringAsync();
+    if (!response.IsSuccessStatusCode) throw new InvalidOperationException(body);
+    return System.Text.Json.JsonSerializer.Deserialize<DeviceAuthorization>(body) ?? throw new InvalidOperationException("Invalid device authorization response.");
 }
 
 async Task CompleteAuthorizationAsync(DeviceAuthorization authorization)
 {
-    var deadline = DateTime.UtcNow.AddSeconds(authorization.ExpiresIn);
-    while (DateTime.UtcNow < deadline)
+    var interval = Math.Max(authorization.Interval, 2);
+    while (true)
     {
-        try
-        {
-            using var response = await client.PostAsJsonAsync("/api/rhythkit/device/poll", new { deviceCode = authorization.DeviceCode });
-            if ((int)response.StatusCode == 404 || (int)response.StatusCode == 410) return;
-            response.EnsureSuccessStatusCode();
-            var result = await response.Content.ReadFromJsonAsync<DeviceTokenResponse>();
-            if (result?.Status == "authorized" && !string.IsNullOrWhiteSpace(result.Token))
-            {
-                var connection = await TestRemoteConnectionAsync(result.Token);
-                if (connection.Authenticated)
-                {
-                    TokenStore.Save(result.Token, connection.Username, gameType);
-                    return;
-                }
-            }
-        }
-        catch { }
-        await Task.Delay(TimeSpan.FromSeconds(2));
+        await Task.Delay(TimeSpan.FromSeconds(interval));
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/rhythkit/device/token");
+        request.Content = JsonContent.Create(new { deviceCode = authorization.DeviceCode });
+        using var response = await client.SendAsync(request);
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest || response.StatusCode == System.Net.HttpStatusCode.NotFound) continue;
+        var body = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode) return;
+        var result = System.Text.Json.JsonSerializer.Deserialize<DeviceTokenResponse>(body);
+        if (result?.Authenticated != true || string.IsNullOrWhiteSpace(result.Token)) return;
+        TokenStore.Save(result.Token, result.Username, gameType);
+        return;
     }
 }
 
@@ -282,11 +221,11 @@ async Task<RemoteScoreResult> SubmitRemoteScoreAsync(string token, ScorePayload 
         using var response = await client.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
         var result = System.Text.Json.JsonSerializer.Deserialize<ScoreResultBody>(body);
-        return new RemoteScoreResult(response.IsSuccessStatusCode, response.StatusCode, body, result?.AlreadyCompleted == true);
+        return new RemoteScoreResult(response.IsSuccessStatusCode, (int)response.StatusCode, body, result?.AlreadyCompleted == true);
     }
     catch
     {
-        return new RemoteScoreResult(false, System.Net.HttpStatusCode.BadGateway, "{\"error\":\"Rhythians could not be reached.\"}", false);
+        return new RemoteScoreResult(false, (int)System.Net.HttpStatusCode.BadGateway, "{\"error\":\"Rhythians could not be reached.\"}", false);
     }
 }
 
@@ -350,7 +289,7 @@ static bool IsGameRunning(string? gameDirectory, string gameType)
 }
 
 record RemoteConnection(bool Authenticated, string? Username);
-record RemoteScoreResult(bool Success, System.Net.HttpStatusCode StatusCode, string Body, bool AlreadyCompleted);
+record RemoteScoreResult(bool Success, int? StatusCode, string Body, bool AlreadyCompleted);
 record ScoreResultBody([property: JsonPropertyName("alreadyCompleted")] bool AlreadyCompleted);
 record LoginPayload(string? Token, string? Username, string? Game);
 record GamePayload(bool Running, bool IntegrationConnected, bool MapCaptureReady, string? Game, string? GameVersion, string? MapId, string? LastEvent);
@@ -359,13 +298,13 @@ record ScorePayload(string ChallengeMapId, string ClientScoreId, double Accuracy
 record DeviceAuthorization(
     [property: JsonPropertyName("deviceCode")] string DeviceCode,
     [property: JsonPropertyName("userCode")] string UserCode,
-    [property: JsonPropertyName("verificationUrl")] string VerificationUrl,
-    [property: JsonPropertyName("expiresIn")] int ExpiresIn);
+    [property: JsonPropertyName("verificationUri")] string VerificationUri,
+    [property: JsonPropertyName("expiresIn")] int ExpiresIn,
+    [property: JsonPropertyName("interval")] int Interval);
 record DeviceTokenResponse(
-    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("authenticated")] bool Authenticated,
     [property: JsonPropertyName("token")] string? Token,
-    [property: JsonPropertyName("installationId")] string? InstallationId);
+    [property: JsonPropertyName("username")] string? Username);
 record RhythiansConnectionResponse(
-    [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("authenticated")] bool Authenticated,
     [property: JsonPropertyName("username")] string? Username);
