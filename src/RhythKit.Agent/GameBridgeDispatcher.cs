@@ -8,9 +8,9 @@ internal sealed class GameBridgeDispatcher : IDisposable
     private readonly HttpClient client = new() { BaseAddress = new Uri("https://rhythians.vercel.app"), Timeout = TimeSpan.FromSeconds(10) };
     private readonly GameBridgeInbox inbox;
 
-    public GameBridgeDispatcher()
+    public GameBridgeDispatcher(string gameType)
     {
-        inbox = new GameBridgeInbox(HandleAsync);
+        inbox = new GameBridgeInbox(gameType, HandleAsync);
     }
 
     public void Start() => inbox.Start();
