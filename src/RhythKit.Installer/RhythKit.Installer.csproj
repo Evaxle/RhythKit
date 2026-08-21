@@ -16,6 +16,9 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="../../rhythkitlogo.ico" Link="rhythkitlogo.ico" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Payloads/RhythKit.dll" LogicalName="RhythKit.dll" />
+    <EmbeddedResource Include="Payloads/RhythKit.Agent.exe" LogicalName="RhythKit.Agent.exe" />
+    <EmbeddedResource Include="Payloads/RhythKit.Uninstaller.exe" LogicalName="RhythKit.Uninstaller.exe" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Mono.Cecil" Version="0.11.6" />
