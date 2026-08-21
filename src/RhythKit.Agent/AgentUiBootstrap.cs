@@ -12,6 +12,7 @@ internal static class AgentUiBootstrap
     private static RhythKitSettingsForm? form;
     private static VulnusConverterForm? converterForm;
     private static int authorizationRunning;
+    private static bool gameWasRunning;
 
     [ModuleInitializer]
     internal static void Initialize()
@@ -22,11 +23,15 @@ internal static class AgentUiBootstrap
         var uiThread = new Thread(() =>
         {
             form = new RhythKitSettingsForm(gameDirectory ?? string.Empty, gameType);
-            form.ShowForGame();
-            if (gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase))
+            if (IsGameRunning())
             {
-                converterForm = new VulnusConverterForm();
-                converterForm.Show();
+                gameWasRunning = true;
+                form.ShowForGame();
+                if (gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase))
+                {
+                    converterForm = new VulnusConverterForm();
+                    converterForm.Show();
+                }
             }
             Application.Run(form);
         });
@@ -38,14 +43,34 @@ internal static class AgentUiBootstrap
 
     private static async Task WatchGameStartupAsync(int port)
     {
-        var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = TimeSpan.FromSeconds(5) };
-        var wasRunning = false;
+        using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = TimeSpan.FromSeconds(5) };
+        var wasRunning = IsGameRunning();
+        gameWasRunning = wasRunning;
+
         for (;;)
         {
             try
             {
                 var running = IsGameRunning();
-                if (running && !wasRunning) GameConnectionState.AddDebug("GameStarted", $"{DisplayGame(gameType)} detected starting.");
+
+                if (running && !wasRunning)
+                {
+                    gameWasRunning = true;
+                    GameConnectionState.AddDebug("GameStarted", $"{DisplayGame(gameType)} detected starting.");
+                    ShowGameUi();
+                }
+
+                if (!running && wasRunning)
+                {
+                    gameWasRunning = false;
+                    GameConnectionState.Update(new GameConnectionUpdate(false, false, false, gameType, null, null, "GameStopped"));
+                    GameConnectionState.AddDebug("GameStopped", $"{DisplayGame(gameType)} closed; RhythKit Agent is stopping.");
+                    CloseGameUi();
+                    await Task.Delay(500);
+                    Environment.Exit(0);
+                    return;
+                }
+
                 if (running)
                 {
                     using var response = await client.GetAsync("status");
@@ -73,11 +98,44 @@ internal static class AgentUiBootstrap
                         }
                     }
                 }
+
                 wasRunning = running;
             }
             catch { }
+
             await Task.Delay(1000);
         }
+    }
+
+    private static void ShowGameUi()
+    {
+        if (form == null || form.IsDisposed) return;
+        if (form.InvokeRequired)
+        {
+            form.BeginInvoke(ShowGameUi);
+            return;
+        }
+
+        form.ShowForGame();
+        if (gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) && (converterForm == null || converterForm.IsDisposed))
+        {
+            converterForm = new VulnusConverterForm();
+            converterForm.Show();
+        }
+    }
+
+    private static void CloseGameUi()
+    {
+        if (form == null || form.IsDisposed) return;
+        if (form.InvokeRequired)
+        {
+            form.BeginInvoke(CloseGameUi);
+            return;
+        }
+
+        converterForm?.Close();
+        converterForm = null;
+        form.CloseFromGameExit();
     }
 
     private static async Task WaitForAuthorizationAsync(HttpClient client, int expiresIn)
@@ -103,7 +161,7 @@ internal static class AgentUiBootstrap
         var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase) || gameType.Equals("RewriteRhythia", StringComparison.OrdinalIgnoreCase)
             ? new[] { "rhythia", "rhythia.exe" }
             : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)
-                ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe", "soundspaceplus", "soundspaceplus.exe" }
+                ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe", "soundspaceplus", "soundspaceplus.exe", "SoundSpacePlus", "SoundSpacePlus.exe" }
                 : gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase)
                     ? new[] { "Vulnus", "Vulnus.exe" }
                     : Array.Empty<string>();
@@ -116,7 +174,12 @@ internal static class AgentUiBootstrap
                     if (names.Any(name => string.Equals(process.ProcessName, Path.GetFileNameWithoutExtension(name), StringComparison.OrdinalIgnoreCase))) return true;
                     if (!string.IsNullOrWhiteSpace(gameDirectory))
                     {
-                        try { var path = process.MainModule?.FileName; if (!string.IsNullOrWhiteSpace(path) && PathsEqualOrChild(path, gameDirectory)) return true; } catch { }
+                        try
+                        {
+                            var path = process.MainModule?.FileName;
+                            if (!string.IsNullOrWhiteSpace(path) && PathsEqualOrChild(path, gameDirectory)) return true;
+                        }
+                        catch { }
                     }
                 }
                 finally { process.Dispose(); }
