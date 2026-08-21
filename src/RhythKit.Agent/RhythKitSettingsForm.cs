@@ -28,6 +28,7 @@ public sealed class RhythKitSettingsForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         ShowInTaskbar = true;
+        SetLogoIcon();
 
         gameLabel.Text = $"Game: {gameType}";
         connectButton.Click += async (_, _) => await ConnectAsync();
@@ -56,6 +57,20 @@ public sealed class RhythKitSettingsForm : Form
             await RefreshAsync(false);
         };
         FormClosed += (_, _) => timer.Stop();
+    }
+
+    private void SetLogoIcon()
+    {
+        try
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "rhythkit logo.png");
+            if (File.Exists(path))
+            {
+                using var bitmap = new Bitmap(path);
+                Icon = Icon.FromHandle(bitmap.GetHicon());
+            }
+        }
+        catch { }
     }
 
     private async Task RefreshAsync(bool showFailure)
