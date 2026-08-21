@@ -10,7 +10,7 @@ internal static class AgentUiBootstrap
     private static string? gameDirectory;
     private static string gameType = "unknown";
     private static RhythKitSettingsForm? form;
-    private static int browserOpened;
+    private static int authorizationRunning;
 
     [ModuleInitializer]
     internal static void Initialize()
@@ -38,23 +38,30 @@ internal static class AgentUiBootstrap
         {
             try
             {
-                if (Interlocked.CompareExchange(ref browserOpened, 0, 0) == 0 && IsGameRunning())
+                if (IsGameRunning())
                 {
                     using var response = await client.GetAsync("status");
                     if (response.IsSuccessStatusCode)
                     {
                         var status = await response.Content.ReadFromJsonAsync<StatusResponse>();
-                        if (status?.Authenticated != true)
+                        if (status?.Authenticated != true && Interlocked.CompareExchange(ref authorizationRunning, 1, 0) == 0)
                         {
-                            using var authResponse = await client.PostAsync("auth/start", null);
-                            if (authResponse.IsSuccessStatusCode)
+                            try
                             {
-                                var authorization = await authResponse.Content.ReadFromJsonAsync<AuthStartResponse>();
-                                if (authorization != null && !string.IsNullOrWhiteSpace(authorization.VerificationUrl))
+                                using var authResponse = await client.PostAsync("auth/start", null);
+                                if (authResponse.IsSuccessStatusCode)
                                 {
-                                    Interlocked.Exchange(ref browserOpened, 1);
-                                    Process.Start(new ProcessStartInfo { FileName = authorization.VerificationUrl, UseShellExecute = true });
+                                    var authorization = await authResponse.Content.ReadFromJsonAsync<AuthStartResponse>();
+                                    if (authorization != null && !string.IsNullOrWhiteSpace(authorization.VerificationUrl))
+                                    {
+                                        Process.Start(new ProcessStartInfo { FileName = authorization.VerificationUrl, UseShellExecute = true });
+                                        await WaitForAuthorizationAsync(client, authorization.ExpiresIn);
+                                    }
                                 }
+                            }
+                            finally
+                            {
+                                Interlocked.Exchange(ref authorizationRunning, 0);
                             }
                         }
                     }
@@ -65,10 +72,23 @@ internal static class AgentUiBootstrap
         }
     }
 
+    private static async Task WaitForAuthorizationAsync(HttpClient client, int expiresIn)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(Math.Max(30, expiresIn));
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(2000);
+            using var response = await client.GetAsync("status");
+            if (!response.IsSuccessStatusCode) continue;
+            var status = await response.Content.ReadFromJsonAsync<StatusResponse>();
+            if (status?.Authenticated == true) return;
+        }
+    }
+
     private static bool IsGameRunning()
     {
         var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase)
-            ? new[] { "Rhythia", "Rhythia.exe" }
+            ? new[] { "rhythia", "rhythia.exe" }
             : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)
                 ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe" }
                 : Array.Empty<string>();
@@ -85,7 +105,7 @@ internal static class AgentUiBootstrap
                         try
                         {
                             var path = process.MainModule?.FileName;
-                            if (!string.IsNullOrWhiteSpace(path) && path.StartsWith(gameDirectory, StringComparison.OrdinalIgnoreCase)) return true;
+                            if (!string.IsNullOrWhiteSpace(path) && PathsEqualOrChild(path, gameDirectory)) return true;
                         }
                         catch { }
                     }
@@ -95,6 +115,17 @@ internal static class AgentUiBootstrap
         }
         catch { }
         return false;
+    }
+
+    private static bool PathsEqualOrChild(string filePath, string directory)
+    {
+        try
+        {
+            var file = Path.GetFullPath(filePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var root = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.Equals(file, root, StringComparison.OrdinalIgnoreCase) || file.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
     }
 
     private static string? GetArgument(string name)
