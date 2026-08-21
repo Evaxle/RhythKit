@@ -19,6 +19,7 @@
     <Compile Include="TokenStore.cs" />
     <Compile Include="GameConnectionState.cs" />
     <Compile Include="GameBridgeInbox.cs" />
+    <Compile Include="GameBridgeDispatcher.cs" />
     <Compile Include="RankedMapStore.cs" />
     <Compile Include="RhythKitSettingsForm.cs" />
     <Compile Include="SspScoreWatcher.cs" />
