@@ -22,6 +22,8 @@ cleanup() {
 trap cleanup EXIT
 
 command -v dotnet >/dev/null 2>&1 || { echo "dotnet 10 SDK is required" >&2; exit 1; }
+command -v base64 >/dev/null 2>&1 || { echo "base64 is required" >&2; exit 1; }
+command -v file >/dev/null 2>&1 || { echo "file is required" >&2; exit 1; }
 dotnet --list-sdks | grep -Eq '^10\.' || { echo "dotnet 10 SDK is required" >&2; exit 1; }
 
 cp "$PAYLOAD" "$BACKUP/RhythKitPayload.cs"
@@ -37,19 +39,18 @@ mkdir -p "$DIST" "$WORK/agent" "$WORK/uninstaller"
 
 COMMON=(
   "-p:EnableWindowsTargeting=true"
+  "-p:RestoreEnablePackagePruning=false"
   "-p:DebugType=None"
   "-p:DebugSymbols=false"
-  "-p:EnablePackagePruning=false"
-  "-p:AllowMissingPrunePackageData=true"
 )
+
 PUBLISH=(
   "-p:PublishSingleFile=true"
   "-p:IncludeNativeLibrariesForSelfExtract=true"
   "-p:EnableWindowsTargeting=true"
+  "-p:RestoreEnablePackagePruning=false"
   "-p:DebugType=None"
   "-p:DebugSymbols=false"
-  "-p:EnablePackagePruning=false"
-  "-p:AllowMissingPrunePackageData=true"
 )
 
 printf 'Using .NET %s\n' "$(dotnet --version)"
@@ -95,6 +96,7 @@ INSTALLER_EXE="$DIST/RhythKitInstall.exe"
 [[ -f "$INSTALLER_EXE" ]] || { echo "RhythKitInstall.exe was not produced" >&2; exit 1; }
 SIZE="$(stat -c '%s' "$INSTALLER_EXE")"
 (( SIZE >= 1000000 )) || { echo "RhythKitInstall.exe is unexpectedly small" >&2; exit 1; }
+file "$INSTALLER_EXE" | grep -Eq 'PE32|PE32\+|MS Windows' || { echo "RhythKitInstall.exe is not a Windows executable" >&2; exit 1; }
 
 rm -rf "$WORK"
 find "$DIST" -mindepth 1 -maxdepth 1 ! -name 'RhythKitInstall.exe' -exec rm -rf {} +
