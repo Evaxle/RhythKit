@@ -10,6 +10,7 @@ internal static class AgentUiBootstrap
     private static string? gameDirectory;
     private static string gameType = "unknown";
     private static RhythKitSettingsForm? form;
+    private static VulnusConverterForm? converterForm;
     private static int authorizationRunning;
 
     [ModuleInitializer]
@@ -22,6 +23,11 @@ internal static class AgentUiBootstrap
         {
             form = new RhythKitSettingsForm(gameDirectory ?? string.Empty, gameType);
             form.ShowForGame();
+            if (gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase))
+            {
+                converterForm = new VulnusConverterForm();
+                converterForm.Show();
+            }
             Application.Run(form);
         });
         uiThread.IsBackground = true;
