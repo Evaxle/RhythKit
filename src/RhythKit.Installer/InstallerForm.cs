@@ -55,8 +55,7 @@ public sealed class InstallerForm : Form
     {
         try
         {
-            var path = Path.Combine(AppContext.BaseDirectory, "rhythkitlogo.ico");
-            if (File.Exists(path)) Icon = new Icon(path);
+            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         }
         catch { }
     }
