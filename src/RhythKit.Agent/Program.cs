@@ -35,11 +35,10 @@ app.MapGet("/status", async () =>
     var connection = await TestRemoteConnectionAsync(state.Token);
     return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected = connection.Authenticated, authenticated = connection.Authenticated, username = connection.Username, game = gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion, rhythiansServerUrl = agentSettings.RhythiansServerUrl });
 });
-
 app.MapGet("/game/status", () => Results.Json(GameConnectionState.Get()));
 app.MapGet("/debug/events", () => Results.Json(GameConnectionState.GetHistory()));
 app.MapDelete("/debug/events", () => { GameConnectionState.ClearHistory(); return Results.Ok(new { ok = true }); });
-
+app.MapGet("/settings", () => Results.Json(new { serverUrl = agentSettings.RhythiansServerUrl, game = gameType, gameDirectory }));
 app.MapPost("/settings/server-url", async (HttpRequest request) =>
 {
     var payload = await request.ReadFromJsonAsync<ServerUrlPayload>();
@@ -49,9 +48,6 @@ app.MapPost("/settings/server-url", async (HttpRequest request) =>
     GameConnectionState.AddDebug("ServerUrlChanged", $"Rhythians server URL changed to {agentSettings.RhythiansServerUrl}.");
     return Results.Ok(new { ok = true, url = agentSettings.RhythiansServerUrl });
 });
-
-app.MapGet("/settings", () => Results.Json(new { serverUrl = agentSettings.RhythiansServerUrl, game = gameType, gameDirectory }));
-
 app.MapPost("/test-connection", async () =>
 {
     var state = TokenStore.Load();
@@ -66,7 +62,6 @@ app.MapPost("/test-connection", async () =>
     GameConnectionState.AddDebug(remote.Authenticated ? "ConnectionTestPassed" : "ConnectionTestFailed", remote.Authenticated ? "RhythKit authenticated with Rhythians successfully." : "Rhythians rejected the current RhythKit token.", data: new { gameRunning, authenticated = remote.Authenticated, username = remote.Username, serverUrl = agentSettings.RhythiansServerUrl });
     return Results.Json(new { ok = remote.Authenticated, installed = true, running = true, gameRunning, authenticated = remote.Authenticated, integrationConnected = GameConnectionState.Get().IntegrationConnected, username = remote.Username, message = remote.Authenticated ? "Connection test passed." : "Connection test failed.", serverUrl = agentSettings.RhythiansServerUrl });
 });
-
 app.MapPost("/game", async (HttpRequest request) =>
 {
     var payload = await request.ReadFromJsonAsync<GamePayload>();
@@ -75,7 +70,6 @@ app.MapPost("/game", async (HttpRequest request) =>
     GameConnectionState.AddDebug(payload.LastEvent ?? "GameState", "Game state updated.", payload.MapId, new { payload.Running, payload.IntegrationConnected, payload.MapCaptureReady });
     return Results.Ok(GameConnectionState.Get());
 });
-
 app.MapPost("/game/event", async (HttpRequest request) =>
 {
     var payload = await request.ReadFromJsonAsync<GameEventPayload>();
@@ -101,7 +95,6 @@ app.MapPost("/game/event", async (HttpRequest request) =>
     GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, payload.MapId, result.Success ? (result.AlreadyCompleted ? "CompletionAlreadyRecorded" : "ScoreSubmitted") : "ScoreRejected"));
     return Results.Content(result.Body, "application/json", System.Text.Encoding.UTF8, result.StatusCode);
 });
-
 app.MapPost("/score", async (HttpRequest request) =>
 {
     var payload = await request.ReadFromJsonAsync<ScorePayload>();
@@ -115,7 +108,6 @@ app.MapPost("/score", async (HttpRequest request) =>
     GameConnectionState.AddDebug(result.Success ? "ScoreSubmitted" : "ScoreRejected", result.Success ? "Direct score submission completed." : "Direct score submission failed.", payload.ChallengeMapId, new { result.StatusCode, result.AlreadyCompleted });
     return Results.Content(result.Body, "application/json", System.Text.Encoding.UTF8, result.StatusCode);
 });
-
 app.MapPost("/vulnus/convert", async (HttpRequest request) =>
 {
     if (!gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase)) return Results.BadRequest(new { error = "This agent is not installed for Vulnus." });
@@ -139,12 +131,8 @@ app.MapPost("/vulnus/convert", async (HttpRequest request) =>
         GameConnectionState.AddDebug("MapImportFailed", exception.Message, data: new { fileName = file.FileName });
         return Results.Problem(exception.Message, statusCode: 500);
     }
-    finally
-    {
-        try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-    }
+    finally { try { if (File.Exists(temp)) File.Delete(temp); } catch { } }
 });
-
 app.MapPost("/auth/start", async () =>
 {
     if (Interlocked.Exchange(ref authorizationRunning, 1) == 1) return Results.Conflict(new { error = "Authorization is already running." });
@@ -152,11 +140,7 @@ app.MapPost("/auth/start", async () =>
     {
         var authorization = await StartDeviceAuthorizationAsync();
         GameConnectionState.AddDebug("AuthorizationStarted", "Rhythians authorization flow started.");
-        _ = Task.Run(async () =>
-        {
-            try { await CompleteAuthorizationAsync(authorization); }
-            finally { Interlocked.Exchange(ref authorizationRunning, 0); }
-        });
+        _ = Task.Run(async () => { try { await CompleteAuthorizationAsync(authorization); } finally { Interlocked.Exchange(ref authorizationRunning, 0); } });
         return Results.Json(authorization);
     }
     catch (Exception exception)
@@ -166,16 +150,14 @@ app.MapPost("/auth/start", async () =>
         return Results.Problem(exception.Message, statusCode: 502);
     }
 });
-
 app.MapPost("/login", async (HttpRequest request) =>
 {
     var payload = await request.ReadFromJsonAsync<LoginPayload>();
     if (payload == null || string.IsNullOrWhiteSpace(payload.Token)) return Results.BadRequest(new { error = "token is required." });
     TokenStore.Save(payload.Token, payload.Username, payload.Game ?? gameType);
-    GameConnectionState.AddDebug("Login", $"Rhythians account linked{(string.IsNullOrWhiteSpace(payload.Username) ? "" : $" as {payload.Username")}." );
+    GameConnectionState.AddDebug("Login", $"Rhythians account linked{(string.IsNullOrWhiteSpace(payload.Username) ? "" : $" as {payload.Username}")}.");
     return Results.Ok(new { ok = true });
 });
-
 app.MapPost("/logout", () => { TokenStore.Clear(); GameConnectionState.AddDebug("Logout", "Rhythians account disconnected."); return Results.Ok(new { ok = true }); });
 app.MapPost("/open", () => { OpenRhythians(); return Results.Ok(new { ok = true }); });
 app.MapPost("/shutdown", () => { Environment.Exit(0); return Results.Ok(new { ok = true }); });
@@ -268,7 +250,7 @@ string? GetArgument(string name)
 
 static Uri NormalizeBaseUri(string? value)
 {
-    if (!Uri.TryCreate(string.IsNullOrWhiteSpace(value) ? "https://rhythians.vercel.app" : value.Trim(), UriKind.Absolute, out var uri)) return new Uri("https://rhythians.vercel.app");
+    if (!Uri.TryCreate(string.IsNullOrWhiteSpace(value) ? "https://rhythians.vercel.app" : value.Trim(), UriKind.Absolute, out var uri)) return new Uri("https://rhythians.vercel.app/");
     return new Uri(uri.ToString().TrimEnd('/') + "/");
 }
 
