@@ -93,12 +93,49 @@ static async Task MonitorGameAsync(string? gameDirectory, string gameType, Cance
         try
         {
             var running = IsGameRunning(gameDirectory, gameType);
-            if (running && !wasRunning && !TokenStore.IsAuthenticated()) await BeginBrowserAuthorizationAsync(gameType, cancellationToken);
+            if (running && !wasRunning)
+            {
+                ShowSettingsWindow(gameDirectory ?? string.Empty, gameType);
+                if (!TokenStore.IsAuthenticated()) await BeginBrowserAuthorizationAsync(gameType, cancellationToken);
+            }
+            else if (!running && wasRunning)
+            {
+                CloseSettingsWindow();
+            }
             wasRunning = running;
         }
         catch { }
         await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
     }
+}
+
+static void ShowSettingsWindow(string gameDirectory, string gameType)
+{
+    if (Interlocked.Exchange(ref SettingsWindowState.Active, 1) != 0) return;
+    var thread = new Thread(() =>
+    {
+        try
+        {
+            ApplicationConfiguration.Initialize();
+            SettingsWindowState.Form = new RhythKitSettingsForm(gameDirectory, gameType);
+            Application.Run(SettingsWindowState.Form);
+        }
+        finally
+        {
+            SettingsWindowState.Form = null;
+            Interlocked.Exchange(ref SettingsWindowState.Active, 0);
+        }
+    });
+    thread.IsBackground = true;
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start();
+}
+
+static void CloseSettingsWindow()
+{
+    var form = SettingsWindowState.Form;
+    if (form == null) return;
+    try { form.CloseFromGameExit(); } catch { }
 }
 
 static bool IsGameRunning(string? gameDirectory, string gameType)
@@ -210,6 +247,12 @@ record AuthResponse(string Status, string? Token, string? InstallationId);
 record RemoteStatus(bool Ok, bool Authenticated, string? Username);
 record RemoteConnection(bool Authenticated, string? Username);
 record TokenState(string Token, string Game);
+
+static class SettingsWindowState
+{
+    public static RhythKitSettingsForm? Form;
+    public static int Active;
+}
 
 static class TokenStore
 {
