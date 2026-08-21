@@ -26,6 +26,7 @@ public sealed class InstallerForm : Form
         Width = 760;
         Height = 300;
         StartPosition = FormStartPosition.CenterScreen;
+        SetLogoIcon();
 
         var browse = new Button { Text = "Browse", AutoSize = true };
         browse.Click += (_, _) => Browse();
@@ -48,6 +49,20 @@ public sealed class InstallerForm : Form
         Controls.Add(buttons);
         Controls.Add(info);
         Controls.Add(pathRow);
+    }
+
+    private void SetLogoIcon()
+    {
+        try
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "rhythkit logo.png");
+            if (File.Exists(path))
+            {
+                using var bitmap = new Bitmap(path);
+                Icon = Icon.FromHandle(bitmap.GetHicon());
+            }
+        }
+        catch { }
     }
 
     private void Browse()
