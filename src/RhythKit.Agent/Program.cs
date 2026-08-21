@@ -27,10 +27,10 @@ app.MapGet("/status", async () =>
     var gameRunning = IsGameRunning(gameDirectory, gameType);
     var game = GameConnectionState.Get();
     if (string.IsNullOrWhiteSpace(state?.Token))
-        return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = false, connected = false, authenticated = false, username = (string?)null, game = state?.Game ?? gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt });
+        return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = false, connected = false, authenticated = false, username = (string?)null, game = state?.Game ?? gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion });
     var connection = await TestRemoteConnectionAsync(state.Token);
     var connected = gameRunning && connection.Authenticated;
-    return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected, authenticated = connection.Authenticated, username = connection.Username, game = state.Game, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt });
+    return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected, authenticated = connection.Authenticated, username = connection.Username, game = state.Game, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion });
 });
 
 app.MapGet("/game/status", () => Results.Json(GameConnectionState.Get()));
@@ -42,6 +42,61 @@ app.MapPost("/game", async (HttpRequest request) =>
     if (payload.Running) TokenStore.SaveGame(payload.Game ?? gameType);
     GameConnectionState.Update(new GameConnectionUpdate(payload.Running, payload.IntegrationConnected, payload.MapCaptureReady, payload.Game ?? gameType, payload.GameVersion, payload.MapId, payload.LastEvent));
     return Results.Ok(GameConnectionState.Get());
+});
+
+app.MapPost("/game/event", async (HttpRequest request) =>
+{
+    var payload = await request.ReadFromJsonAsync<GameEventPayload>();
+    if (payload == null || string.IsNullOrWhiteSpace(payload.Event)) return Results.BadRequest(new { error = "Invalid game event." });
+    var current = GameConnectionState.Get();
+    GameConnectionState.Update(new GameConnectionUpdate(
+        payload.Running ?? current.Running,
+        payload.IntegrationConnected ?? current.IntegrationConnected,
+        payload.MapCaptureReady ?? current.MapCaptureReady,
+        payload.Game ?? current.Game,
+        payload.GameVersion ?? current.GameVersion,
+        payload.MapId ?? current.MapId,
+        payload.Event));
+    return Results.Ok(GameConnectionState.Get());
+});
+
+app.MapPost("/score", async (HttpRequest request) =>
+{
+    var payload = await request.ReadFromJsonAsync<ScorePayload>();
+    if (payload == null || string.IsNullOrWhiteSpace(payload.ChallengeMapId) || string.IsNullOrWhiteSpace(payload.ClientScoreId))
+        return Results.BadRequest(new { error = "challengeMapId and clientScoreId are required." });
+    if (payload.Accuracy is < 0 or > 100 || payload.Misses < 0 || payload.Speed is <= 0)
+        return Results.BadRequest(new { error = "Invalid score values." });
+
+    var state = TokenStore.Load();
+    if (string.IsNullOrWhiteSpace(state?.Token)) return Results.Unauthorized();
+
+    using var outbound = new HttpRequestMessage(HttpMethod.Post, "/api/rhythkit/scores");
+    outbound.Headers.Authorization = new AuthenticationHeaderValue("Bearer", state.Token);
+    outbound.Content = JsonContent.Create(new
+    {
+        challengeMapId = payload.ChallengeMapId,
+        clientScoreId = payload.ClientScoreId,
+        accuracy = payload.Accuracy,
+        misses = payload.Misses,
+        speed = payload.Speed,
+        gameVersion = payload.GameVersion,
+        integrationVersion = payload.IntegrationVersion,
+        completedAt = payload.CompletedAt ?? DateTimeOffset.UtcNow
+    });
+
+    try
+    {
+        using var response = await client.SendAsync(outbound);
+        var body = await response.Content.ReadAsStringAsync();
+        GameConnectionState.Update(new GameConnectionUpdate(true, true, true, gameType, payload.GameVersion, payload.ChallengeMapId, response.IsSuccessStatusCode ? "ScoreSubmitted" : "ScoreRejected"));
+        return Results.Content(body, response.Content.Headers.ContentType?.ToString() ?? "application/json", System.Text.Encoding.UTF8, response.StatusCode);
+    }
+    catch
+    {
+        GameConnectionState.Update(new GameConnectionUpdate(true, true, true, gameType, payload.GameVersion, payload.ChallengeMapId, "ScoreSubmissionFailed"));
+        return Results.Problem("Rhythians could not be reached.", statusCode: 502);
+    }
 });
 
 app.MapPost("/auth/start", async () =>
@@ -151,7 +206,7 @@ async Task EnsureAuthorizationAsync()
 
 async Task<DeviceAuthorization> StartDeviceAuthorizationAsync()
 {
-    using var response = await client.PostAsJsonAsync("/api/rhythkit/device/start", new { gameVersion = "0.1.0" });
+    using var response = await client.PostAsJsonAsync("/api/rhythkit/device/start", new { gameVersion = GetGameVersion() });
     response.EnsureSuccessStatusCode();
     return await response.Content.ReadFromJsonAsync<DeviceAuthorization>() ?? throw new InvalidOperationException("Invalid authorization response.");
 }
@@ -197,6 +252,12 @@ async Task<RemoteConnection> TestRemoteConnectionAsync(string token)
     {
         return new RemoteConnection(false, null);
     }
+}
+
+string GetGameVersion()
+{
+    var version = GameConnectionState.Get().GameVersion;
+    return string.IsNullOrWhiteSpace(version) ? "unknown" : version;
 }
 
 void OpenRhythians()
@@ -255,6 +316,8 @@ static bool IsGameRunning(string? gameDirectory, string gameType)
 record RemoteConnection(bool Authenticated, string? Username);
 record LoginPayload(string? Token, string? Username, string? Game);
 record GamePayload(bool Running, bool IntegrationConnected, bool MapCaptureReady, string? Game, string? GameVersion, string? MapId, string? LastEvent);
+record GameEventPayload(string Event, bool? Running, bool? IntegrationConnected, bool? MapCaptureReady, string? Game, string? GameVersion, string? MapId);
+record ScorePayload(string ChallengeMapId, string ClientScoreId, double Accuracy, int Misses, double? Speed, string? GameVersion, string? IntegrationVersion, DateTimeOffset? CompletedAt);
 record DeviceAuthorization(
     [property: JsonPropertyName("deviceCode")] string DeviceCode,
     [property: JsonPropertyName("userCode")] string UserCode,
