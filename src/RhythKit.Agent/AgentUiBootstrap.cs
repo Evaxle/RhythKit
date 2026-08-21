@@ -17,7 +17,7 @@ internal static class AgentUiBootstrap
     {
         gameDirectory = GetArgument("--game-dir");
         gameType = GetArgument("--game-type") ?? "unknown";
-
+        var port = AgentPorts.For(gameType);
         var uiThread = new Thread(() =>
         {
             form = new RhythKitSettingsForm(gameDirectory ?? string.Empty, gameType);
@@ -27,13 +27,12 @@ internal static class AgentUiBootstrap
         uiThread.IsBackground = true;
         uiThread.SetApartmentState(ApartmentState.STA);
         uiThread.Start();
-
-        _ = Task.Run(WatchGameStartupAsync);
+        _ = Task.Run(() => WatchGameStartupAsync(port));
     }
 
-    private static async Task WatchGameStartupAsync()
+    private static async Task WatchGameStartupAsync(int port)
     {
-        var client = new HttpClient { BaseAddress = new Uri("http://127.0.0.1:45872/"), Timeout = TimeSpan.FromSeconds(5) };
+        var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = TimeSpan.FromSeconds(5) };
         for (;;)
         {
             try
@@ -59,10 +58,7 @@ internal static class AgentUiBootstrap
                                     }
                                 }
                             }
-                            finally
-                            {
-                                Interlocked.Exchange(ref authorizationRunning, 0);
-                            }
+                            finally { Interlocked.Exchange(ref authorizationRunning, 0); }
                         }
                     }
                 }
@@ -91,8 +87,9 @@ internal static class AgentUiBootstrap
             ? new[] { "rhythia", "rhythia.exe" }
             : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)
                 ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe" }
-                : Array.Empty<string>();
-
+                : gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase)
+                    ? new[] { "Vulnus", "Vulnus.exe" }
+                    : Array.Empty<string>();
         try
         {
             foreach (var process in Process.GetProcesses())
@@ -131,8 +128,7 @@ internal static class AgentUiBootstrap
     private static string? GetArgument(string name)
     {
         var args = Environment.GetCommandLineArgs();
-        for (var i = 0; i < args.Length - 1; i++)
-            if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
+        for (var i = 0; i < args.Length - 1; i++) if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
         return null;
     }
 
