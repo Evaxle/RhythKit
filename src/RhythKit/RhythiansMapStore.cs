@@ -28,11 +28,26 @@ public static class RhythiansMapStore
             var extension = Path.GetExtension(source);
             if (!extension.Equals(".sspm", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".rhm", StringComparison.OrdinalIgnoreCase)) return;
             var title = ReadString(map, "Title") ?? ReadString(map, "SongName") ?? ReadString(map, "Name") ?? "Rhythians Map";
+            CaptureFile(source, rhythiansId, FindCacheMetadata(map, title), title, map);
+        }
+        catch { }
+    }
+
+    public static void CaptureFile(string source, string rhythiansId, JsonObject? metadata = null, string? title = null, object? map = null)
+    {
+        if (string.IsNullOrWhiteSpace(source) || !File.Exists(source) || string.IsNullOrWhiteSpace(rhythiansId)) return;
+        try
+        {
+            Initialize();
+            var extension = Path.GetExtension(source);
+            if (!extension.Equals(".sspm", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".rhm", StringComparison.OrdinalIgnoreCase)) return;
+            title ??= metadata?["Title"]?.GetValue<string>() ?? metadata?["SongName"]?.GetValue<string>() ?? "Rhythians Map";
             var folder = CreateFolder(title, rhythiansId);
             var destination = Path.Combine(folder, Path.GetFileName(source));
             if (!File.Exists(destination)) File.Copy(source, destination);
-            var metadata = FindCacheMetadata(map, title) ?? BuildMetadata(map, rhythiansId, source);
+            metadata ??= map != null ? BuildMetadata(map, rhythiansId, source) : new JsonObject();
             metadata["RhythiansId"] = rhythiansId;
+            metadata["FilePath"] = source;
             File.WriteAllText(Path.Combine(folder, "map.json"), metadata.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         }
         catch { }
