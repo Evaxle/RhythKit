@@ -14,6 +14,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="AgentSettings.cs" />
+    <Compile Include="TokenStore.cs" />
     <Compile Include="RhythKitSettingsForm.cs" />
     <Compile Include="SspScoreWatcher.cs" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
