@@ -8,6 +8,8 @@ RhythKit is the desktop connection layer between Rhythia, SSP Nightly, and Rhyth
 - Rhythia Steam
 - Legacy Rhythia builds that contain `Rhythia.dll`
 
+The Steam Rhythia build is the native Windows distribution. Its game directory does not contain `Rhythia.dll`; the supported layout is identified by `rhythia.exe`, `steam_api64.dll`, `rsign.dll`, `rosu_pp.dll`, and `e_sqlite3.dll`.
+
 The installer detects the selected game folder and displays the detected target before installation.
 
 ## Build on Windows
@@ -29,9 +31,10 @@ The build produces:
 ```text
 dist\win-x64\RhythKit.Installer.exe
 dist\win-x64\RhythKit.Agent.exe
+dist\win-x64\RhythKit.Uninstaller.exe
 ```
 
-Give the user `RhythKit.Installer.exe` together with `RhythKit.Agent.exe` from the same build output. The installer embeds the current `RhythKit.dll` payload and installs the agent beside the game integration.
+Use the three executables from the same build output. The managed `RhythKit.dll` payload is only installed for legacy managed Rhythia builds. Steam Rhythia is installed through the external RhythKit Agent and does not receive a fake `Rhythia.dll` patch.
 
 ## Install
 
@@ -39,11 +42,11 @@ Give the user `RhythKit.Installer.exe` together with `RhythKit.Agent.exe` from t
 2. Select the actual SSP Nightly, Rhythia Steam, or legacy Rhythia game directory.
 3. Confirm that the installer says `Detected: SSP Nightly`, `Detected: Rhythia Steam`, or `Detected: legacy Rhythia`.
 4. Click `Install RhythKit`.
-5. The installer writes the RhythKit payload and a game manifest.
+5. The installer validates the target layout and creates the `RhythKit` integration directory.
 6. The installer registers the RhythKit agent to start with Windows and starts it immediately.
 7. Close the installer.
 
-The agent monitors the selected game process. It does not open the Rhythians login page immediately after installation.
+For Steam Rhythia, the installer does not modify `rhythia.exe`, `steam_api64.dll`, `rsign.dll`, `rosu_pp.dll`, or any other original game dependency.
 
 ## First game launch connection
 
@@ -52,7 +55,7 @@ When the installed game is started for the first time while RhythKit is not auth
 ```text
 Game starts
     ↓
-RhythKit Agent detects the game
+RhythKit Agent detects rhythia.exe
     ↓
 Rhythians device authorization is created
     ↓
@@ -91,14 +94,9 @@ The token is only used by the agent for authenticated Rhythians API requests.
 
 ## Score flow
 
-1. RhythKit identifies the played map.
-2. The map identity is matched against a Rhythians map ID.
-3. Only eligible completed maps are submitted.
-4. The Rhythians API authenticates the installation token.
-5. The server validates the map and completion.
-6. The server calculates and records the score/RHP.
+For targets with a native or managed game-side score integration, RhythKit identifies the played map, resolves the Rhythians map ID, verifies eligibility, and submits the completed score through the Rhythians API.
 
-Approved Rhythians map downloads contain the Rhythians map identity in an SSPM-compatible custom field so RhythKit can read the ID.
+The current Steam Rhythia executable is a native distribution and does not expose the managed `Rhythia.dll` entry point used by the legacy patcher. The installer therefore does not pretend to inject the managed payload into Steam Rhythia. Steam score capture requires a game-side native integration or a documented replay/score data interface for the exact Steam build.
 
 ## Rebuilding after source changes
 
@@ -108,7 +106,7 @@ Always rebuild after changing RhythKit source code:
 .\build.ps1
 ```
 
-Do not mix `RhythKit.Installer.exe` and `RhythKit.Agent.exe` from different builds.
+Do not mix `RhythKit.Installer.exe`, `RhythKit.Agent.exe`, and `RhythKit.Uninstaller.exe` from different builds.
 
 ## Testing
 
@@ -122,16 +120,16 @@ For each target:
 
 1. Install RhythKit.
 2. Start the game.
-3. Verify the Rhythians authorization page opens.
+3. Verify the Rhythians authorization page opens when the installation is not authenticated.
 4. Sign in and click `Confirm login for RhythKit`.
 5. Verify the `Rhythians is connected` Windows popup.
 6. Open Rhythians Settings and verify `RhythKit: Connected`.
-7. Play a map that exists on Rhythians.
+7. For a target with score integration, play a map that exists on Rhythians.
 8. Complete the map.
 9. Verify the completion appears in the Rhythians account.
 
 ## Projects
 
-- `src/RhythKit` — Rhythians API client, map identity, and game integration code
+- `src/RhythKit` — Rhythians API client, map identity, and managed game integration
 - `src/RhythKit.Agent` — local HTTP agent, game detection, authorization polling, and SSP score watcher
-- `src/RhythKit.Installer` — Windows installer and game detection
+- `src/RhythKit.Installer` — Windows installer, Steam layout validation, and game detection
