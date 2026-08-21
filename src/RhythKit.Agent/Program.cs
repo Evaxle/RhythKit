@@ -67,6 +67,8 @@ app.MapPost("/score", async (HttpRequest request) =>
         return Results.BadRequest(new { error = "challengeMapId and clientScoreId are required." });
     if (payload.Accuracy is < 0 or > 100 || payload.Misses < 0 || payload.Speed is <= 0)
         return Results.BadRequest(new { error = "Invalid score values." });
+    if (!payload.ResultQualified) return Results.Conflict(new { error = "The game did not qualify this result." });
+    if (!RankedMapStore.Contains(payload.ChallengeMapId)) return Results.NotFound(new { error = "The map is not installed as a Rhythians map." });
 
     var state = TokenStore.Load();
     if (string.IsNullOrWhiteSpace(state?.Token)) return Results.Unauthorized();
@@ -82,7 +84,8 @@ app.MapPost("/score", async (HttpRequest request) =>
         speed = payload.Speed,
         gameVersion = payload.GameVersion,
         integrationVersion = payload.IntegrationVersion,
-        completedAt = payload.CompletedAt ?? DateTimeOffset.UtcNow
+        completedAt = payload.CompletedAt ?? DateTimeOffset.UtcNow,
+        resultQualified = payload.ResultQualified
     });
 
     try
@@ -317,7 +320,7 @@ record RemoteConnection(bool Authenticated, string? Username);
 record LoginPayload(string? Token, string? Username, string? Game);
 record GamePayload(bool Running, bool IntegrationConnected, bool MapCaptureReady, string? Game, string? GameVersion, string? MapId, string? LastEvent);
 record GameEventPayload(string Event, bool? Running, bool? IntegrationConnected, bool? MapCaptureReady, string? Game, string? GameVersion, string? MapId);
-record ScorePayload(string ChallengeMapId, string ClientScoreId, double Accuracy, int Misses, double? Speed, string? GameVersion, string? IntegrationVersion, DateTimeOffset? CompletedAt);
+record ScorePayload(string ChallengeMapId, string ClientScoreId, double Accuracy, int Misses, double? Speed, string? GameVersion, string? IntegrationVersion, DateTimeOffset? CompletedAt, bool ResultQualified);
 record DeviceAuthorization(
     [property: JsonPropertyName("deviceCode")] string DeviceCode,
     [property: JsonPropertyName("userCode")] string UserCode,
