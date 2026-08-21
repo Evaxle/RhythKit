@@ -7,6 +7,7 @@ on:
       - feat/rhythians-connection
       - feature/full-rhythkit-integration
   pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
