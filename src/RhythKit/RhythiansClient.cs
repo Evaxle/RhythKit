@@ -63,10 +63,14 @@ public sealed record ScoreSubmission(
     [property: JsonPropertyName("clientScoreId")] string ClientScoreId,
     [property: JsonPropertyName("accuracy")] double? Accuracy,
     [property: JsonPropertyName("misses")] int? Misses,
-    [property: JsonPropertyName("speed")] double? Speed);
+    [property: JsonPropertyName("speed")] double? Speed,
+    [property: JsonPropertyName("gameVersion")] string? GameVersion = null,
+    [property: JsonPropertyName("integrationVersion")] string? IntegrationVersion = null,
+    [property: JsonPropertyName("completedAt")] DateTimeOffset? CompletedAt = null);
 
 public sealed record ScoreSubmissionResponse(
     [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("duplicate")] bool Duplicate,
+    [property: JsonPropertyName("counted")] bool Counted,
     [property: JsonPropertyName("points")] int Points,
     [property: JsonPropertyName("rhp")] int Rhp);
