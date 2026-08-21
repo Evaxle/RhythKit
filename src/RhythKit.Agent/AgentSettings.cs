@@ -5,4 +5,5 @@ internal sealed class AgentSettings
     public string? GameDirectory { get; set; }
     public string? GameType { get; set; }
     public bool StartWithGame { get; set; } = true;
+    public string RhythiansServerUrl { get; set; } = "https://rhythians.vercel.app";
 }
