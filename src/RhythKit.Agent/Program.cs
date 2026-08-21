@@ -18,9 +18,11 @@ app.UseCors();
 app.MapGet("/status", async () =>
 {
     var state = TokenStore.Load();
-    if (string.IsNullOrWhiteSpace(state?.Token)) return Results.Json(new { installed = true, running = true, authenticated = false, username = (string?)null, game = state?.Game ?? "unknown" });
+    var gameRunning = IsGameRunning(gameDirectory, gameType);
+    if (string.IsNullOrWhiteSpace(state?.Token)) return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = false, connected = false, authenticated = false, username = (string?)null, game = state?.Game ?? gameType });
     var connection = await TestRemoteConnectionAsync(state.Token);
-    return Results.Json(new { installed = true, running = true, authenticated = connection.Authenticated, username = connection.Username, game = state.Game });
+    var connected = gameRunning && connection.Authenticated;
+    return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected, authenticated = connection.Authenticated, username = connection.Username, game = state.Game });
 });
 
 app.MapPost("/game", async (HttpRequest request) =>
@@ -141,7 +143,7 @@ static void CloseSettingsWindow()
 static bool IsGameRunning(string? gameDirectory, string gameType)
 {
     var names = GetTargetProcessNames(gameDirectory, gameType);
-    var directory = string.IsNullOrWhiteSpace(gameDirectory) ? null : Path.GetFullPath(gameDirectory);
+    var directory = string.IsNullOrWhiteSpace(gameDirectory) ? null : Path.GetFullPath(gameDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
     foreach (var name in names)
     {
         foreach (var process in Process.GetProcessesByName(name))
