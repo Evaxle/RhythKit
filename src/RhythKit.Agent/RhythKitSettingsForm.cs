@@ -13,30 +13,29 @@ public sealed class RhythKitSettingsForm : Form
     private readonly Label gameLabel = new() { AutoSize = true };
     private readonly Button connectButton = new() { Text = "Connect Rhythians", AutoSize = true };
     private readonly Button testButton = new() { Text = "Test Connection", AutoSize = true };
-    private readonly Button mapsButton = new() { Text = "Open Rhythians Maps", AutoSize = true };
+    private readonly Button mapsButton = new() { Text = "Open Maps", AutoSize = true };
     private readonly System.Windows.Forms.Timer timer;
-    private readonly HttpClient client = new() { BaseAddress = new Uri("http://127.0.0.1:45872/") };
+    private readonly HttpClient client;
 
     public RhythKitSettingsForm(string gameDirectory, string gameType)
     {
         this.gameDirectory = gameDirectory;
         this.gameType = gameType;
+        client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{AgentPorts.For(gameType)}/") };
         Text = "RhythKit Settings";
-        Width = 520;
+        Width = 560;
         Height = 320;
-        MinimumSize = new Size(520, 320);
+        MinimumSize = new Size(560, 320);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         ShowInTaskbar = true;
         Visible = false;
         SetLogoIcon();
-
-        gameLabel.Text = $"Game: {gameType}";
+        gameLabel.Text = $"Game: {DisplayGame(gameType)}";
         connectButton.Click += async (_, _) => await ConnectAsync();
         testButton.Click += async (_, _) => await RefreshAsync(true);
         mapsButton.Click += (_, _) => OpenMaps();
-
         var title = new Label { Text = "RhythKit", AutoSize = true, Font = new Font(Font.FontFamily, 18, FontStyle.Bold) };
         var info = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(20) };
         info.Controls.Add(title);
@@ -44,24 +43,25 @@ public sealed class RhythKitSettingsForm : Form
         info.Controls.Add(statusLabel);
         info.Controls.Add(integrationLabel);
         info.Controls.Add(mapLabel);
-
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(20, 0, 20, 20) };
         buttons.Controls.Add(connectButton);
         buttons.Controls.Add(testButton);
         buttons.Controls.Add(mapsButton);
-
         Controls.Add(buttons);
         Controls.Add(info);
-
         timer = new System.Windows.Forms.Timer { Interval = 2000 };
         timer.Tick += async (_, _) => await RefreshAsync(false);
-        Shown += async (_, _) =>
-        {
-            timer.Start();
-            await RefreshAsync(false);
-        };
-        FormClosed += (_, _) => timer.Stop();
+        Shown += async (_, _) => { timer.Start(); await RefreshAsync(false); };
+        FormClosed += (_, _) => { timer.Stop(); client.Dispose(); };
     }
+
+    private static string DisplayGame(string value) => value switch
+    {
+        "RhythiaSteam" => "Rhythia Steam",
+        "SspNightly" => "Sound Space Plus",
+        "Vulnus" => "Vulnus",
+        _ => value
+    };
 
     private void SetLogoIcon()
     {
@@ -76,11 +76,7 @@ public sealed class RhythKitSettingsForm : Form
     public void ShowForGame()
     {
         if (IsDisposed) return;
-        if (InvokeRequired)
-        {
-            BeginInvoke(ShowForGame);
-            return;
-        }
+        if (InvokeRequired) { BeginInvoke(ShowForGame); return; }
         if (!Visible) Show();
         Activate();
     }
@@ -102,13 +98,8 @@ public sealed class RhythKitSettingsForm : Form
                 statusLabel.Text = "Rhythians: Not connected";
                 connectButton.Visible = true;
             }
-
-            integrationLabel.Text = result?.IntegrationConnected == true
-                ? "Game integration: Connected"
-                : "Game integration: Not connected";
-            mapLabel.Text = result?.MapCaptureReady == true
-                ? $"Map capture: Ready{(string.IsNullOrWhiteSpace(result.MapId) ? string.Empty : $" ({result.MapId})")}"
-                : "Map capture: Not ready";
+            integrationLabel.Text = result?.IntegrationConnected == true ? "Game integration: Connected" : "Game integration: Not connected";
+            mapLabel.Text = result?.MapCaptureReady == true ? $"Map capture: Ready{(string.IsNullOrWhiteSpace(result.MapId) ? string.Empty : $" ({result.MapId})")}" : "Map capture: Not ready";
         }
         catch
         {
@@ -148,7 +139,7 @@ public sealed class RhythKitSettingsForm : Form
 
     private void OpenMaps()
     {
-        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "Rhythians", "maps");
+        var path = gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vulnus", "maps") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "Rhythians", "maps");
         Directory.CreateDirectory(path);
         Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
     }
@@ -156,14 +147,10 @@ public sealed class RhythKitSettingsForm : Form
     public void CloseFromGameExit()
     {
         if (IsDisposed) return;
-        if (InvokeRequired)
-        {
-            BeginInvoke(CloseFromGameExit);
-            return;
-        }
+        if (InvokeRequired) { BeginInvoke(CloseFromGameExit); return; }
         Close();
     }
 
-    private sealed record StatusResponse(bool Installed, bool Running, bool GameRunning, bool LoggedIn, bool Connected, bool Authenticated, string? Username, string? Game, bool IntegrationConnected, bool MapCaptureReady, string? MapId, string? LastEvent, DateTimeOffset LastSeenAt);
+    private sealed record StatusResponse(bool Installed, bool Running, bool GameRunning, bool LoggedIn, bool Connected, bool Authenticated, string? Username, string? Game, bool IntegrationConnected, bool MapCaptureReady, string? MapId, string? LastEvent, DateTimeOffset LastSeenAt, string? GameVersion);
     private sealed record AuthStartResponse(string DeviceCode, string UserCode, string VerificationUrl, int ExpiresIn, string? GameVersion);
 }
