@@ -4,21 +4,20 @@ namespace RhythKit.Agent;
 
 internal sealed class GameBridgeInbox : IDisposable
 {
-    private readonly string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "Rhythians", "bridge", "events.jsonl");
+    private readonly string path;
     private readonly CancellationTokenSource cancellation = new();
     private readonly Func<GameBridgeMessage, Task> handler;
     private Task? task;
 
-    public GameBridgeInbox(Func<GameBridgeMessage, Task> handler)
+    public GameBridgeInbox(string gameType, Func<GameBridgeMessage, Task> handler)
     {
+        var fileName = gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) ? "events-vulnus.jsonl" : "events.jsonl";
+        path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "Rhythians", "bridge", fileName);
         this.handler = handler;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
     }
 
-    public void Start()
-    {
-        task = Task.Run(RunAsync);
-    }
+    public void Start() => task = Task.Run(RunAsync);
 
     private async Task RunAsync()
     {
