@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PUBLISH="$ROOT/dist/win-x64"
+DIST="$ROOT/dist"
+PUBLISH="$DIST/win-x64"
 RHYTHKIT_PROJECT="$ROOT/src/RhythKit/RhythKit.csproj"
 INSTALLER_PROJECT="$ROOT/src/RhythKit.Installer/RhythKit.Installer.csproj"
 AGENT_PROJECT="$ROOT/src/RhythKit.Agent/RhythKit.Agent.csproj"
@@ -13,7 +14,9 @@ command -v dotnet >/dev/null 2>&1 || { echo "dotnet is required" >&2; exit 1; }
 command -v base64 >/dev/null 2>&1 || { echo "base64 is required" >&2; exit 1; }
 command -v file >/dev/null 2>&1 || { echo "file is required" >&2; exit 1; }
 
-rm -rf "$ROOT/dist"
+dotnet --version
+
+rm -rf "$DIST"
 mkdir -p "$PUBLISH"
 
 WIN_PROPS=("-p:EnableWindowsTargeting=true" "-p:RuntimeIdentifier=win-x64")
@@ -25,13 +28,14 @@ dotnet restore "$UNINSTALLER_PROJECT" "${WIN_PROPS[@]}"
 
 dotnet build "$RHYTHKIT_PROJECT" -c Release --no-restore "${WIN_PROPS[@]}"
 
-RHYTHKIT_OUTPUT="$(find "$ROOT/src/RhythKit" -type f -path '*/bin/Release/*/RhythKit.dll' -print -quit)"
+RHYTHKIT_OUTPUT="$(find "$ROOT/src/RhythKit" -type f -name 'RhythKit.dll' -path '*/Release/*' -print | head -n 1)"
 if [[ -z "$RHYTHKIT_OUTPUT" || ! -f "$RHYTHKIT_OUTPUT" ]]; then
   echo "RhythKit.dll was not produced by the Release build" >&2
-  find "$ROOT/src/RhythKit/bin" -type f 2>/dev/null || true
+  find "$ROOT/src/RhythKit" -type f -name 'RhythKit.dll' -print 2>/dev/null || true
   exit 1
 fi
 
+echo "Using RhythKit payload: $RHYTHKIT_OUTPUT"
 BASE64="$(base64 -w 0 "$RHYTHKIT_OUTPUT")"
 printf 'namespace RhythKit.Installer;\n\ninternal static class RhythKitPayload\n{\n    public static byte[] Data => Convert.FromBase64String("%s");\n}\n' "$BASE64" > "$PAYLOAD_SOURCE"
 
