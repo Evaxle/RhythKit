@@ -16,6 +16,11 @@ internal static class GameConnectionState
         lock (Sync) return History.ToArray();
     }
 
+    public static void ClearHistory()
+    {
+        lock (Sync) History.Clear();
+    }
+
     public static void AddDebug(string eventName, string message, string? mapId = null, object? data = null)
     {
         lock (Sync)
@@ -29,15 +34,7 @@ internal static class GameConnectionState
     {
         lock (Sync)
         {
-            state = new GameConnectionSnapshot(
-                update.Running,
-                update.IntegrationConnected,
-                update.MapCaptureReady,
-                update.Game ?? state.Game,
-                update.GameVersion ?? state.GameVersion,
-                update.MapId ?? state.MapId,
-                update.LastEvent ?? state.LastEvent,
-                DateTimeOffset.UtcNow);
+            state = new GameConnectionSnapshot(update.Running, update.IntegrationConnected, update.MapCaptureReady, update.Game ?? state.Game, update.GameVersion ?? state.GameVersion, update.MapId ?? state.MapId, update.LastEvent ?? state.LastEvent, DateTimeOffset.UtcNow);
             if (!string.IsNullOrWhiteSpace(update.LastEvent))
             {
                 History.Enqueue(new GameDebugEvent(DateTimeOffset.UtcNow, update.LastEvent!, "Game integration event", state.Game, state.GameVersion, update.MapId ?? state.MapId, null));
@@ -47,30 +44,6 @@ internal static class GameConnectionState
     }
 }
 
-internal sealed record GameConnectionUpdate(
-    bool Running,
-    bool IntegrationConnected,
-    bool MapCaptureReady,
-    string? Game,
-    string? GameVersion,
-    string? MapId,
-    string? LastEvent);
-
-internal sealed record GameConnectionSnapshot(
-    bool Running,
-    bool IntegrationConnected,
-    bool MapCaptureReady,
-    string? Game,
-    string? GameVersion,
-    string? MapId,
-    string? LastEvent,
-    DateTimeOffset LastSeenAt);
-
-internal sealed record GameDebugEvent(
-    DateTimeOffset Timestamp,
-    string Event,
-    string Message,
-    string? Game,
-    string? GameVersion,
-    string? MapId,
-    object? Data);
+internal sealed record GameConnectionUpdate(bool Running, bool IntegrationConnected, bool MapCaptureReady, string? Game, string? GameVersion, string? MapId, string? LastEvent);
+internal sealed record GameConnectionSnapshot(bool Running, bool IntegrationConnected, bool MapCaptureReady, string? Game, string? GameVersion, string? MapId, string? LastEvent, DateTimeOffset LastSeenAt);
+internal sealed record GameDebugEvent(DateTimeOffset Timestamp, string Event, string Message, string? Game, string? GameVersion, string? MapId, object? Data);
