@@ -8,6 +8,7 @@ public static class RhythKitBootstrap
 {
     private static RhythiansClient? client;
     private static string? token;
+    private static string? username;
     private static bool initialized;
     private static bool resultQueued;
     private static Button? statusButton;
@@ -47,7 +48,7 @@ public static class RhythKitBootstrap
         if (buttons == null) return;
 
         statusButton ??= CreateButton(buttons, "RhythiansStatus", "Rhythians: Checking...");
-        connectButton ??= CreateButton(buttons, "RhythiansConnect", "Connect Rhythians");
+        connectButton ??= CreateButton(buttons, "RhythiansConnect", "Login to Rhythians");
         testButton ??= CreateButton(buttons, "RhythiansTest", "Test Connection");
         var mapsButton = buttons.GetNodeOrNull<Button>("RhythiansMaps") ?? CreateButton(buttons, "RhythiansMaps", "See Rhythians Maps");
 
@@ -81,13 +82,15 @@ public static class RhythKitBootstrap
         {
             if (string.IsNullOrWhiteSpace(token)) throw new InvalidOperationException();
             var result = await client.TestConnectionAsync(token);
-            if (result?.Ok != true || result.Authenticated != true) throw new InvalidOperationException();
-            statusButton.Text = "Rhythians: Connected";
+            if (result?.Ok != true || result.Authenticated != true || string.IsNullOrWhiteSpace(result.Username)) throw new InvalidOperationException();
+            username = result.Username;
+            statusButton.Text = $"Rhythians: Connected ({username})";
             if (connectButton != null) connectButton.Visible = false;
-            if (showResult) GD.Print("[RhythKit] Rhythians connection test passed.");
+            if (showResult) GD.Print($"[RhythKit] Rhythians connection test passed for {username}.");
         }
         catch
         {
+            username = null;
             statusButton.Text = "Rhythians: Not connected";
             if (connectButton != null) connectButton.Visible = true;
             if (showResult) GD.PrintErr("[RhythKit] Rhythians connection test failed.");
