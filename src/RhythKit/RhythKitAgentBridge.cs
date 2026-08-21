@@ -41,6 +41,7 @@ public sealed record GameConnectionState(
     bool MapCaptureReady,
     string? Game,
     string? GameVersion,
+    string? IntegrationVersion,
     string? MapId,
     string? LastEvent);
 
@@ -51,7 +52,15 @@ public sealed record GameEvent(
     bool? MapCaptureReady = null,
     string? Game = null,
     string? GameVersion = null,
-    string? MapId = null);
+    string? IntegrationVersion = null,
+    string? MapId = null,
+    string? ResultId = null,
+    double? Accuracy = null,
+    int? Misses = null,
+    double? Speed = null,
+    bool? Passed = null,
+    bool? ResultQualified = null,
+    DateTimeOffset? CompletedAt = null);
 
 public sealed record GameConnectionSnapshot(
     bool Running,
@@ -59,6 +68,7 @@ public sealed record GameConnectionSnapshot(
     bool MapCaptureReady,
     string? Game,
     string? GameVersion,
+    string? IntegrationVersion,
     string? MapId,
     string? LastEvent,
     DateTimeOffset LastSeenAt);
