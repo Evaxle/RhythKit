@@ -129,19 +129,24 @@ public static class RhythKitBootstrap
             var legacyRunner = FindType("LegacyRunner");
             var attempt = legacyRunner?.GetProperty("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) ?? legacyRunner?.GetField("CurrentAttempt", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
             if (attempt == null || GetBool(attempt, "IsReplay") || !GetBool(attempt, "Alive") || !GetBool(attempt, "Qualifies")) return;
+            var passed = GetOptionalBool(attempt, "Passed");
+            if (passed.HasValue && !passed.Value) return;
+
             var map = GetValue(attempt, "Map");
             var rhythiansMapId = RhythiansMapIdentity.Resolve(map);
             var mapPath = GetString(map, "Path") ?? GetString(map, "FilePath") ?? GetString(map, "SourcePath");
-            if (rhythiansMapId == null && mapPath != null) rhythiansMapId = RhythiansMapIdentity.ResolveFromSspm(mapPath) ?? RhythiansMapIdentity.ResolveFromRhm(mapPath);
-            if (string.IsNullOrWhiteSpace(rhythiansMapId)) return;
-            RhythiansMapStore.Capture(map, rhythiansMapId);
+            if (rhythiansMapId == null && mapPath != null)
+                rhythiansMapId = RhythiansMapIdentity.ResolveFromSspm(mapPath) ?? RhythiansMapIdentity.ResolveFromRhm(mapPath);
+            if (string.IsNullOrWhiteSpace(rhythiansMapId) || !RhythiansMapStore.Contains(rhythiansMapId)) return;
+
             var accuracy = GetNullableDouble(attempt, "Accuracy");
             var misses = GetNullableInt(attempt, "Misses");
-            if (accuracy == null || misses == null) return;
+            if (accuracy == null || misses == null || accuracy < 0 || accuracy > 100 || misses < 0) return;
+
             await bridge.ReportEventAsync(new GameEvent("MapCompleted", true, true, true, "Rhythia", GetGameVersion(), rhythiansMapId));
             var score = new ScoreSubmission(
                 rhythiansMapId,
-                GetString(attempt, "ID") ?? Guid.NewGuid().ToString("N"),
+                GetString(attempt, "ID") ?? GetString(attempt, "Id") ?? Guid.NewGuid().ToString("N"),
                 accuracy,
                 misses,
                 GetNullableDouble(attempt, "Speed"),
@@ -168,12 +173,13 @@ public static class RhythKitBootstrap
     {
         if (target == null) return null;
         var type = target.GetType();
-        return type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target) ?? type.GetField(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
+        return type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)?.GetValue(target) ?? type.GetField(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)?.GetValue(target);
     }
     private static string? GetString(object? target, string name) => GetValue(target, name)?.ToString();
     private static bool GetBool(object? target, string name) => GetValue(target, name) is bool value && value;
-    private static double? GetNullableDouble(object? target, string name) => GetValue(target, name) switch { double value => value, float value => value, _ => null };
-    private static int? GetNullableInt(object? target, string name) => GetValue(target, name) switch { int value => value, uint value when value <= int.MaxValue => (int)value, _ => null };
+    private static bool? GetOptionalBool(object? target, string name) => GetValue(target, name) switch { bool value => value, _ => null };
+    private static double? GetNullableDouble(object? target, string name) => GetValue(target, name) switch { double value => value, float value => value, decimal value => (double)value, int value => value, long value => value, _ => null };
+    private static int? GetNullableInt(object? target, string name) => GetValue(target, name) switch { int value => value, uint value when value <= int.MaxValue => (int)value, long value when value is >= 0 and value <= int.MaxValue => (int)value, _ => null };
 
     private static class TokenStore
     {
