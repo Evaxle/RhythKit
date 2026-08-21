@@ -56,7 +56,7 @@ public sealed record DeviceTokenResponse(
 public sealed record RhythiansConnectionResponse(
     [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("authenticated")] bool Authenticated,
-    [property: JsonPropertyName("gameVersion")] string? GameVersion);
+    [property: JsonPropertyName("username")] string? Username);
 
 public sealed record ScoreSubmission(
     [property: JsonPropertyName("challengeMapId")] string ChallengeMapId,
