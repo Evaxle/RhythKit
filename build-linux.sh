@@ -40,6 +40,7 @@ COMMON=(
   "-p:DebugType=None"
   "-p:DebugSymbols=false"
   "-p:EnablePackagePruning=false"
+  "-p:AllowMissingPrunePackageData=true"
 )
 PUBLISH=(
   "-p:PublishSingleFile=true"
@@ -48,6 +49,7 @@ PUBLISH=(
   "-p:DebugType=None"
   "-p:DebugSymbols=false"
   "-p:EnablePackagePruning=false"
+  "-p:AllowMissingPrunePackageData=true"
 )
 
 printf 'Using .NET %s\n' "$(dotnet --version)"
