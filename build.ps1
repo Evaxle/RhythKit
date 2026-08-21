@@ -11,6 +11,7 @@ $publish = Join-Path $root "dist\win-x64"
 
 Remove-Item (Join-Path $root "dist") -Recurse -Force -ErrorAction SilentlyContinue
 
+dotnet restore $rhythKitProject
 dotnet restore $installerProject
 dotnet restore $agentProject
 dotnet restore $uninstallerProject
@@ -37,9 +38,17 @@ Copy-Item (Join-Path $publish "uninstaller\RhythKit.Uninstaller.exe") (Join-Path
 Remove-Item (Join-Path $publish "agent") -Recurse -Force
 Remove-Item (Join-Path $publish "uninstaller") -Recurse -Force
 
-if (!(Test-Path (Join-Path $publish "RhythKit.Installer.exe"))) { throw "Installer executable was not produced." }
-if (!(Test-Path (Join-Path $publish "RhythKit.Agent.exe"))) { throw "Agent executable was not produced." }
-if (!(Test-Path (Join-Path $publish "RhythKit.Uninstaller.exe"))) { throw "Uninstaller executable was not produced." }
-Write-Host "Built: $publish\RhythKit.Installer.exe"
-Write-Host "Built: $publish\RhythKit.Agent.exe"
-Write-Host "Built: $publish\RhythKit.Uninstaller.exe"
+$outputs = @(
+    (Join-Path $publish "RhythKit.Installer.exe"),
+    (Join-Path $publish "RhythKit.Agent.exe"),
+    (Join-Path $publish "RhythKit.Uninstaller.exe")
+)
+
+foreach ($output in $outputs) {
+    if (!(Test-Path $output)) { throw "Expected executable was not produced: $output" }
+    if ((Get-Item $output).Length -lt 1000000) { throw "Executable is unexpectedly small: $output" }
+}
+
+Write-Host "Built: $($outputs[0])"
+Write-Host "Built: $($outputs[1])"
+Write-Host "Built: $($outputs[2])"
