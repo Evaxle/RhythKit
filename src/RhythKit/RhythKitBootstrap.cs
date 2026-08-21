@@ -161,7 +161,7 @@ public static class RhythKitBootstrap
     private static class TokenStore
     {
         private sealed record State(string Token, string? Username, string? Game);
-        private static string Path => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rhythians", "rhythkit.json");
+        private static string Path => System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "Rhythians", "rhythkit.json");
 
         public static string? Load()
         {
