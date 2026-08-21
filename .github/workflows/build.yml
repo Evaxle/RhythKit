@@ -24,6 +24,7 @@ jobs:
           $file = ".\dist\win-x64\RhythKitInstall.exe"
           if (!(Test-Path $file)) { throw "Missing portable installer: $file" }
           if ((Get-Item $file).Length -lt 1000000) { throw "Installer is unexpectedly small" }
+          git diff --exit-code -- src/RhythKit.Installer/RhythKitPayload.cs src/RhythKit.Installer/RhythKitAgentPayload.cs src/RhythKit.Installer/RhythKitUninstallerPayload.cs
       - uses: actions/upload-artifact@v4
         with:
           name: RhythKit-win-x64
