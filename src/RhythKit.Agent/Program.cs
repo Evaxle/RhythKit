@@ -12,14 +12,18 @@ using RhythKit.Agent;
 
 var gameDirectory = GetArgument("--game-dir");
 var gameType = GetArgument("--game-type") ?? "unknown";
+var agentSettings = TokenStore.LoadSettings();
+agentSettings.GameDirectory = gameDirectory;
+agentSettings.GameType = gameType;
+TokenStore.SaveSettings(agentSettings);
 TokenStore.SaveGame(gameType);
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, AgentPorts.For(gameType)));
-builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.SetIsOriginAllowed(origin => origin.StartsWith("https://rhythians.vercel.app", StringComparison.OrdinalIgnoreCase) || origin.StartsWith("https://rhythians.com", StringComparison.OrdinalIgnoreCase)).AllowAnyHeader().AllowAnyMethod()));
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.SetIsOriginAllowed(_ => true).AllowAnyHeader().AllowAnyMethod()));
 var app = builder.Build();
 app.UseCors();
-using var client = new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app"), Timeout = TimeSpan.FromSeconds(10) };
+using var client = new HttpClient { BaseAddress = NormalizeBaseUri(agentSettings.RhythiansServerUrl), Timeout = TimeSpan.FromSeconds(10) };
 var authorizationRunning = 0;
 
 app.MapGet("/status", async () =>
@@ -27,29 +31,40 @@ app.MapGet("/status", async () =>
     var state = TokenStore.Load();
     var gameRunning = IsGameRunning(gameDirectory, gameType);
     var game = GameConnectionState.Get();
-    if (string.IsNullOrWhiteSpace(state?.Token))
-        return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = false, connected = false, authenticated = false, username = (string?)null, game = gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion });
+    if (string.IsNullOrWhiteSpace(state?.Token)) return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = false, connected = false, authenticated = false, username = (string?)null, game = gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion, rhythiansServerUrl = agentSettings.RhythiansServerUrl });
     var connection = await TestRemoteConnectionAsync(state.Token);
-    return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected = connection.Authenticated, authenticated = connection.Authenticated, username = connection.Username, game = gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion });
+    return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected = connection.Authenticated, authenticated = connection.Authenticated, username = connection.Username, game = gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion, rhythiansServerUrl = agentSettings.RhythiansServerUrl });
 });
 
 app.MapGet("/game/status", () => Results.Json(GameConnectionState.Get()));
 app.MapGet("/debug/events", () => Results.Json(GameConnectionState.GetHistory()));
 app.MapDelete("/debug/events", () => { GameConnectionState.ClearHistory(); return Results.Ok(new { ok = true }); });
 
+app.MapPost("/settings/server-url", async (HttpRequest request) =>
+{
+    var payload = await request.ReadFromJsonAsync<ServerUrlPayload>();
+    if (payload == null || !Uri.TryCreate(payload.Url?.Trim(), UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)) return Results.BadRequest(new { error = "A valid HTTP or HTTPS server URL is required." });
+    agentSettings.RhythiansServerUrl = uri.ToString().TrimEnd('/');
+    TokenStore.SaveSettings(agentSettings);
+    GameConnectionState.AddDebug("ServerUrlChanged", $"Rhythians server URL changed to {agentSettings.RhythiansServerUrl}.");
+    return Results.Ok(new { ok = true, url = agentSettings.RhythiansServerUrl });
+});
+
+app.MapGet("/settings", () => Results.Json(new { serverUrl = agentSettings.RhythiansServerUrl, game = gameType, gameDirectory }));
+
 app.MapPost("/test-connection", async () =>
 {
     var state = TokenStore.Load();
     var gameRunning = IsGameRunning(gameDirectory, gameType);
-    GameConnectionState.AddDebug("ConnectionTestStarted", $"Testing {gameType} connection.", data: new { gameRunning, agentPort = AgentPorts.For(gameType) });
+    GameConnectionState.AddDebug("ConnectionTestStarted", $"Testing {gameType} connection.", data: new { gameRunning, agentPort = AgentPorts.For(gameType), serverUrl = agentSettings.RhythiansServerUrl });
     if (string.IsNullOrWhiteSpace(state?.Token))
     {
         GameConnectionState.AddDebug("AuthenticationRequired", "RhythKit is installed and reachable, but no Rhythians login is linked.");
         return Results.Json(new { ok = false, installed = true, running = true, gameRunning, authenticated = false, integrationConnected = GameConnectionState.Get().IntegrationConnected, message = "Rhythians login is required." }, statusCode: 401);
     }
     var remote = await TestRemoteConnectionAsync(state.Token);
-    GameConnectionState.AddDebug(remote.Authenticated ? "ConnectionTestPassed" : "ConnectionTestFailed", remote.Authenticated ? "RhythKit authenticated with Rhythians successfully." : "Rhythians rejected the current RhythKit token.", data: new { gameRunning, authenticated = remote.Authenticated, username = remote.Username });
-    return Results.Json(new { ok = remote.Authenticated, installed = true, running = true, gameRunning, authenticated = remote.Authenticated, integrationConnected = GameConnectionState.Get().IntegrationConnected, username = remote.Username, message = remote.Authenticated ? "Connection test passed." : "Connection test failed." });
+    GameConnectionState.AddDebug(remote.Authenticated ? "ConnectionTestPassed" : "ConnectionTestFailed", remote.Authenticated ? "RhythKit authenticated with Rhythians successfully." : "Rhythians rejected the current RhythKit token.", data: new { gameRunning, authenticated = remote.Authenticated, username = remote.Username, serverUrl = agentSettings.RhythiansServerUrl });
+    return Results.Json(new { ok = remote.Authenticated, installed = true, running = true, gameRunning, authenticated = remote.Authenticated, integrationConnected = GameConnectionState.Get().IntegrationConnected, username = remote.Username, message = remote.Authenticated ? "Connection test passed." : "Connection test failed.", serverUrl = agentSettings.RhythiansServerUrl });
 });
 
 app.MapPost("/game", async (HttpRequest request) =>
@@ -157,28 +172,13 @@ app.MapPost("/login", async (HttpRequest request) =>
     var payload = await request.ReadFromJsonAsync<LoginPayload>();
     if (payload == null || string.IsNullOrWhiteSpace(payload.Token)) return Results.BadRequest(new { error = "token is required." });
     TokenStore.Save(payload.Token, payload.Username, payload.Game ?? gameType);
-    GameConnectionState.AddDebug("Login", $"Rhythians account linked{(string.IsNullOrWhiteSpace(payload.Username) ? "" : $" as {payload.Username}")}.");
+    GameConnectionState.AddDebug("Login", $"Rhythians account linked{(string.IsNullOrWhiteSpace(payload.Username) ? "" : $" as {payload.Username")}." );
     return Results.Ok(new { ok = true });
 });
 
-app.MapPost("/logout", () =>
-{
-    TokenStore.Clear();
-    GameConnectionState.AddDebug("Logout", "Rhythians account disconnected.");
-    return Results.Ok(new { ok = true });
-});
-
-app.MapPost("/open", () =>
-{
-    OpenRhythians();
-    return Results.Ok(new { ok = true });
-});
-
-app.MapPost("/shutdown", () =>
-{
-    Environment.Exit(0);
-    return Results.Ok(new { ok = true });
-});
+app.MapPost("/logout", () => { TokenStore.Clear(); GameConnectionState.AddDebug("Logout", "Rhythians account disconnected."); return Results.Ok(new { ok = true }); });
+app.MapPost("/open", () => { OpenRhythians(); return Results.Ok(new { ok = true }); });
+app.MapPost("/shutdown", () => { Environment.Exit(0); return Results.Ok(new { ok = true }); });
 
 using var dispatcher = new GameBridgeDispatcher();
 dispatcher.Start();
@@ -208,7 +208,7 @@ async Task CompleteAuthorizationAsync(DeviceAuthorization authorization)
                 if (connection.Authenticated)
                 {
                     TokenStore.Save(result.Token, connection.Username, gameType);
-                    GameConnectionState.AddDebug("AuthorizationCompleted", $"Rhythians authorization completed{(string.IsNullOrWhiteSpace(connection.Username) ? "" : $" as {connection.Username")} }.");
+                    GameConnectionState.AddDebug("AuthorizationCompleted", $"Rhythians authorization completed{(string.IsNullOrWhiteSpace(connection.Username) ? "" : $" as {connection.Username}")}.");
                     return;
                 }
             }
@@ -266,6 +266,12 @@ string? GetArgument(string name)
     return null;
 }
 
+static Uri NormalizeBaseUri(string? value)
+{
+    if (!Uri.TryCreate(string.IsNullOrWhiteSpace(value) ? "https://rhythians.vercel.app" : value.Trim(), UriKind.Absolute, out var uri)) return new Uri("https://rhythians.vercel.app");
+    return new Uri(uri.ToString().TrimEnd('/') + "/");
+}
+
 static string DescribeEvent(GameEventPayload payload) => payload.Event switch
 {
     "MapSelected" => $"Map selected{(string.IsNullOrWhiteSpace(payload.MapId) ? "" : $" ({payload.MapId})")}",
@@ -277,7 +283,7 @@ static string DescribeEvent(GameEventPayload payload) => payload.Event switch
 
 static bool IsGameRunning(string? gameDirectory, string gameType)
 {
-    var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase) ? new[] { "rhythia", "rhythia.exe" } : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase) ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe" } : gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) ? new[] { "Vulnus", "Vulnus.exe" } : Array.Empty<string>();
+    var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase) || gameType.Equals("RewriteRhythia", StringComparison.OrdinalIgnoreCase) ? new[] { "rhythia", "rhythia.exe" } : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase) ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe", "soundspaceplus", "soundspaceplus.exe" } : gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) ? new[] { "Vulnus", "Vulnus.exe" } : Array.Empty<string>();
     try
     {
         foreach (var process in Process.GetProcesses())
@@ -287,12 +293,7 @@ static bool IsGameRunning(string? gameDirectory, string gameType)
                 if (names.Any(name => string.Equals(process.ProcessName, Path.GetFileNameWithoutExtension(name), StringComparison.OrdinalIgnoreCase))) return true;
                 if (!string.IsNullOrWhiteSpace(gameDirectory))
                 {
-                    try
-                    {
-                        var path = process.MainModule?.FileName;
-                        if (!string.IsNullOrWhiteSpace(path) && PathsEqualOrChild(path, gameDirectory)) return true;
-                    }
-                    catch { }
+                    try { var path = process.MainModule?.FileName; if (!string.IsNullOrWhiteSpace(path) && PathsEqualOrChild(path, gameDirectory)) return true; } catch { }
                 }
             }
             finally { process.Dispose(); }
@@ -317,6 +318,7 @@ record RemoteConnection(bool Authenticated, string? Username);
 record RemoteScoreResult(bool Success, int? StatusCode, string Body, bool AlreadyCompleted);
 record ScoreResultBody([property: JsonPropertyName("alreadyCompleted")] bool AlreadyCompleted);
 record LoginPayload(string? Token, string? Username, string? Game);
+record ServerUrlPayload(string? Url);
 record GamePayload(bool Running, bool IntegrationConnected, bool MapCaptureReady, string? Game, string? GameVersion, string? MapId, string? LastEvent);
 record GameEventPayload(string Event, bool? Running, bool? IntegrationConnected, bool? MapCaptureReady, string? Game, string? GameVersion, string? IntegrationVersion, string? MapId, string? ResultId, double? Accuracy, int? Misses, double? Speed, bool? Passed, bool ResultQualified, DateTimeOffset? CompletedAt);
 record ScorePayload(string ChallengeMapId, string ClientScoreId, double Accuracy, int Misses, double? Speed, string? GameVersion, string? IntegrationVersion, DateTimeOffset? CompletedAt, bool ResultQualified);
