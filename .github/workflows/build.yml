@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/rhythians-connection
+      - feature/full-rhythkit-integration
   pull_request:
 
 jobs:
