@@ -8,34 +8,23 @@ RHYTHKIT="$ROOT/src/RhythKit/RhythKit.csproj"
 INSTALLER="$ROOT/src/RhythKit.Installer/RhythKit.Installer.csproj"
 AGENT="$ROOT/src/RhythKit.Agent/RhythKit.Agent.csproj"
 UNINSTALLER="$ROOT/src/RhythKit.Uninstaller/RhythKit.Uninstaller.csproj"
-PAYLOAD="$ROOT/src/RhythKit.Installer/RhythKitPayload.cs"
-AGENT_PAYLOAD="$ROOT/src/RhythKit.Installer/RhythKitAgentPayload.cs"
-UNINSTALLER_PAYLOAD="$ROOT/src/RhythKit.Installer/RhythKitUninstallerPayload.cs"
-BACKUP="$(mktemp -d)"
-
-cleanup() {
-  cp "$BACKUP/RhythKitPayload.cs" "$PAYLOAD"
-  cp "$BACKUP/RhythKitAgentPayload.cs" "$AGENT_PAYLOAD"
-  cp "$BACKUP/RhythKitUninstallerPayload.cs" "$UNINSTALLER_PAYLOAD"
-  rm -rf "$BACKUP"
-}
-trap cleanup EXIT
+PAYLOAD_DIR="$ROOT/src/RhythKit.Installer/Payloads"
 
 command -v dotnet >/dev/null 2>&1 || { echo "dotnet 10 SDK is required" >&2; exit 1; }
-command -v base64 >/dev/null 2>&1 || { echo "base64 is required" >&2; exit 1; }
 command -v file >/dev/null 2>&1 || { echo "file is required" >&2; exit 1; }
 dotnet --list-sdks | grep -Eq '^10\.' || { echo "dotnet 10 SDK is required" >&2; exit 1; }
 
-cp "$PAYLOAD" "$BACKUP/RhythKitPayload.cs"
-cp "$AGENT_PAYLOAD" "$BACKUP/RhythKitAgentPayload.cs"
-cp "$UNINSTALLER_PAYLOAD" "$BACKUP/RhythKitUninstallerPayload.cs"
+cleanup() {
+  rm -rf "$PAYLOAD_DIR"
+}
+trap cleanup EXIT
 
 rm -rf "$ROOT/dist"
 rm -rf "$ROOT/src/RhythKit/bin" "$ROOT/src/RhythKit/obj"
 rm -rf "$ROOT/src/RhythKit.Installer/bin" "$ROOT/src/RhythKit.Installer/obj"
 rm -rf "$ROOT/src/RhythKit.Agent/bin" "$ROOT/src/RhythKit.Agent/obj"
 rm -rf "$ROOT/src/RhythKit.Uninstaller/bin" "$ROOT/src/RhythKit.Uninstaller/obj"
-mkdir -p "$DIST" "$WORK/agent" "$WORK/uninstaller"
+mkdir -p "$DIST" "$WORK/agent" "$WORK/uninstaller" "$PAYLOAD_DIR"
 
 COMMON=(
   "-p:EnableWindowsTargeting=true"
@@ -60,12 +49,7 @@ dotnet build "$RHYTHKIT" -c Release --no-restore "${COMMON[@]}"
 
 RHYTHKIT_DLL="$(find "$ROOT/src/RhythKit" -type f -name 'RhythKit.dll' -path '*/bin/Release/*' -print -quit 2>/dev/null || true)"
 [[ -n "$RHYTHKIT_DLL" ]] || { echo "RhythKit.dll was not produced" >&2; exit 1; }
-
-{
-  printf '%s\n' 'namespace RhythKit.Installer;' '' 'internal static class RhythKitPayload' '{' '    public static byte[] Data => Convert.FromBase64String("'
-  base64 -w 0 "$RHYTHKIT_DLL"
-  printf '%s\n' '");' '}'
-} > "$PAYLOAD"
+cp "$RHYTHKIT_DLL" "$PAYLOAD_DIR/RhythKit.dll"
 
 dotnet restore "$AGENT" -r win-x64 "${COMMON[@]}"
 dotnet restore "$UNINSTALLER" -r win-x64 "${COMMON[@]}"
@@ -79,16 +63,8 @@ UNINSTALLER_EXE="$WORK/uninstaller/RhythKit.Uninstaller.exe"
 [[ -f "$AGENT_EXE" ]] || { echo "RhythKit.Agent.exe was not produced" >&2; exit 1; }
 [[ -f "$UNINSTALLER_EXE" ]] || { echo "RhythKit.Uninstaller.exe was not produced" >&2; exit 1; }
 
-{
-  printf '%s\n' 'namespace RhythKit.Installer;' '' 'internal static class RhythKitAgentPayload' '{' '    public static byte[] Data => Convert.FromBase64String("'
-  base64 -w 0 "$AGENT_EXE"
-  printf '%s\n' '");' '}'
-} > "$AGENT_PAYLOAD"
-{
-  printf '%s\n' 'namespace RhythKit.Installer;' '' 'internal static class RhythKitUninstallerPayload' '{' '    public static byte[] Data => Convert.FromBase64String("'
-  base64 -w 0 "$UNINSTALLER_EXE"
-  printf '%s\n' '");' '}'
-} > "$UNINSTALLER_PAYLOAD"
+cp "$AGENT_EXE" "$PAYLOAD_DIR/RhythKit.Agent.exe"
+cp "$UNINSTALLER_EXE" "$PAYLOAD_DIR/RhythKit.Uninstaller.exe"
 
 dotnet publish "$INSTALLER" -c Release -r win-x64 --self-contained true --no-restore "${PUBLISH[@]}" -o "$DIST"
 
