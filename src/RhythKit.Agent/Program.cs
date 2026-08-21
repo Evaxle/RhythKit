@@ -74,7 +74,7 @@ app.MapPost("/exit", () =>
     return Results.Ok();
 });
 
-_ = Task.Run(() => Application.Run(new RhythKitSettingsForm()));
+_ = Task.Run(() => Application.Run(new RhythKitSettingsForm(gameDirectory ?? string.Empty, gameType)));
 
 await app.RunAsync();
 
