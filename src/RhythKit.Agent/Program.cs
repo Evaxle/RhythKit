@@ -29,7 +29,7 @@ app.MapGet("/status", async () =>
     if (string.IsNullOrWhiteSpace(state?.Token))
         return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = false, connected = false, authenticated = false, username = (string?)null, game = state?.Game ?? gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion });
     var connection = await TestRemoteConnectionAsync(state.Token);
-    var connected = gameRunning && connection.Authenticated;
+    var connected = connection.Authenticated;
     return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected, authenticated = connection.Authenticated, username = connection.Username, game = state.Game, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt, gameVersion = game.GameVersion });
 });
 
@@ -232,7 +232,7 @@ string? GetArgument(string name)
 
 static bool IsGameRunning(string? gameDirectory, string gameType)
 {
-    var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase) ? new[] { "Rhythia", "Rhythia.exe" } : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase) ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe" } : new[] { "osu!", "osu", "osu!.exe", "osu.exe" };
+    var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase) ? new[] { "rhythia", "rhythia.exe" } : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase) ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe" } : new[] { "osu!", "osu", "osu!.exe", "osu.exe" };
     try
     {
         foreach (var process in Process.GetProcesses())
@@ -245,7 +245,7 @@ static bool IsGameRunning(string? gameDirectory, string gameType)
                     try
                     {
                         var path = process.MainModule?.FileName;
-                        if (!string.IsNullOrWhiteSpace(path) && path.StartsWith(gameDirectory, StringComparison.OrdinalIgnoreCase)) return true;
+                        if (!string.IsNullOrWhiteSpace(path) && PathsEqualOrChild(path, gameDirectory)) return true;
                     }
                     catch { }
                 }
@@ -255,6 +255,17 @@ static bool IsGameRunning(string? gameDirectory, string gameType)
     }
     catch { }
     return false;
+}
+
+static bool PathsEqualOrChild(string filePath, string directory)
+{
+    try
+    {
+        var file = Path.GetFullPath(filePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var root = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return string.Equals(file, root, StringComparison.OrdinalIgnoreCase) || file.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+    catch { return false; }
 }
 
 record RemoteConnection(bool Authenticated, string? Username);
