@@ -19,5 +19,17 @@ jobs:
         run: .\build.ps1
       - shell: pwsh
         run: |
-          if (!(Test-Path .\dist\win-x64\RhythKit.Installer.exe)) { exit 1 }
-          if ((Get-Item .\dist\win-x64\RhythKit.Installer.exe).Length -lt 1000000) { exit 1 }
+          $files = @(
+            ".\dist\win-x64\RhythKit.Installer.exe",
+            ".\dist\win-x64\RhythKit.Agent.exe",
+            ".\dist\win-x64\RhythKit.Uninstaller.exe"
+          )
+          foreach ($file in $files) {
+            if (!(Test-Path $file)) { throw "Missing executable: $file" }
+            if ((Get-Item $file).Length -lt 1000000) { throw "Executable is unexpectedly small: $file" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RhythKit-win-x64
+          path: dist/win-x64/*.exe
+          if-no-files-found: error
