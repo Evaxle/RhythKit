@@ -21,6 +21,7 @@ public static class RhythKitBootstrap
         client = RhythiansClient.CreateDefault();
         token = TokenStore.Load();
         RhythiansMapStore.Initialize();
+        RhythiansMapWatcher.Start();
         var tree = Engine.GetMainLoop() as SceneTree;
         if (tree == null) return;
         tree.NodeAdded += OnNodeAdded;
@@ -63,31 +64,14 @@ public static class RhythKitBootstrap
     {
         var existing = parent.GetNodeOrNull<Button>(name);
         if (existing != null) return existing;
-        var button = new Button
-        {
-            Name = name,
-            Text = text,
-            CustomMinimumSize = new Vector2(0, 48)
-        };
+        var button = new Button { Name = name, Text = text, CustomMinimumSize = new Vector2(0, 48) };
         parent.AddChild(button);
         return button;
     }
 
-    private static void OnConnectPressed()
-    {
-        if (connectButton == null) return;
-        _ = ConnectAsync(connectButton);
-    }
-
-    private static void OnTestPressed()
-    {
-        _ = RefreshConnectionAsync(true);
-    }
-
-    private static void OnMapsPressed()
-    {
-        try { RhythiansMapStore.OpenRoot(); } catch (Exception exception) { GD.PrintErr($"[RhythKit] {exception}"); }
-    }
+    private static void OnConnectPressed() { if (connectButton != null) _ = ConnectAsync(connectButton); }
+    private static void OnTestPressed() { _ = RefreshConnectionAsync(true); }
+    private static void OnMapsPressed() { try { RhythiansMapStore.OpenRoot(); } catch (Exception exception) { GD.PrintErr($"[RhythKit] {exception}"); } }
 
     private static async Task RefreshConnectionAsync(bool showResult = false)
     {
