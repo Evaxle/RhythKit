@@ -8,9 +8,9 @@ internal sealed class GameBridgeDispatcher : IDisposable
     private readonly HttpClient client = new() { BaseAddress = new Uri("https://rhythians.vercel.app"), Timeout = TimeSpan.FromSeconds(10) };
     private readonly GameBridgeInbox inbox;
 
-    public GameBridgeDispatcher(string gameType)
+    public GameBridgeDispatcher()
     {
-        inbox = new GameBridgeInbox(gameType, HandleAsync);
+        inbox = new GameBridgeInbox(GetGameType(), HandleAsync);
     }
 
     public void Start() => inbox.Start();
@@ -46,6 +46,14 @@ internal sealed class GameBridgeDispatcher : IDisposable
         {
             GameConnectionState.Update(new GameConnectionUpdate(true, true, true, game, version, message.MapId, "ScoreSubmissionFailed"));
         }
+    }
+
+    private static string GetGameType()
+    {
+        var args = Environment.GetCommandLineArgs();
+        for (var i = 0; i < args.Length - 1; i++)
+            if (string.Equals(args[i], "--game-type", StringComparison.OrdinalIgnoreCase)) return args[i + 1];
+        return "unknown";
     }
 
     public void Dispose()
