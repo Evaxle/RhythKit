@@ -35,11 +35,11 @@ public static class RhythiansMapWatcher
                 var id = extension.Equals(".sspm", StringComparison.OrdinalIgnoreCase)
                     ? RhythiansMapIdentity.ResolveFromSspm(source)
                     : RhythiansMapIdentity.ResolveFromRhm(source);
-                if (string.IsNullOrWhiteSpace(id)) continue;
+                if (!Guid.TryParse(id, out _)) continue;
                 var stem = Path.GetFileNameWithoutExtension(source);
                 var metadata = FindMetadata(root, stem);
-                var title = metadata?["Title"]?.GetValue<string>() ?? metadata?["SongName"]?.GetValue<string>() ?? GetTitleFromFileName(source, id);
-                RhythiansMapStore.CaptureFile(source, id, metadata, title);
+                var title = metadata?["Title"]?.GetValue<string>() ?? metadata?["SongName"]?.GetValue<string>() ?? GetTitleFromFileName(source, id!);
+                RhythiansMapStore.CaptureFile(source, id!, metadata, title);
             }
         }
     }
@@ -47,9 +47,11 @@ public static class RhythiansMapWatcher
     private static IEnumerable<string> GetMapRoots()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         yield return Path.Combine(appData, "CapoRhythia", "maps");
         yield return Path.Combine(appData, "Rhythia", "maps");
         yield return Path.Combine(appData, "Rhythia", "Maps");
+        yield return Path.Combine(userProfile, "Downloads");
     }
 
     private static string GetTitleFromFileName(string source, string id)
