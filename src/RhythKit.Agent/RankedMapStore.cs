@@ -4,7 +4,7 @@ namespace RhythKit.Agent;
 
 internal static class RankedMapStore
 {
-    private static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "Rhythians", "maps");
+    private static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rhythians", "maps");
 
     public static bool Contains(string id)
     {
