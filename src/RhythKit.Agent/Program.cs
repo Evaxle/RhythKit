@@ -18,6 +18,7 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.Se
 var app = builder.Build();
 app.UseCors();
 var client = RhythiansClient.CreateDefault();
+var authorizationRunning = 0;
 
 app.MapGet("/status", async () =>
 {
@@ -31,14 +32,20 @@ app.MapGet("/status", async () =>
 
 app.MapPost("/auth/start", async () =>
 {
+    if (Interlocked.Exchange(ref authorizationRunning, 1) == 1) return Results.Conflict(new { error = "Authorization is already running." });
     try
     {
         var authorization = await client.StartDeviceAuthorizationAsync();
-        _ = Task.Run(() => CompleteAuthorizationAsync(authorization));
+        _ = Task.Run(async () =>
+        {
+            try { await CompleteAuthorizationAsync(authorization); }
+            finally { Interlocked.Exchange(ref authorizationRunning, 0); }
+        });
         return Results.Json(authorization);
     }
     catch (Exception exception)
     {
+        Interlocked.Exchange(ref authorizationRunning, 0);
         return Results.Problem(exception.Message, statusCode: 502);
     }
 });
@@ -93,12 +100,16 @@ var form = new RhythKitSettingsForm(gameDirectory ?? string.Empty, gameType);
 _ = Task.Run(async () =>
 {
     var seenGame = false;
-    while (!CancellationToken.None.IsCancellationRequested)
+    while (true)
     {
         var running = IsGameRunning(gameDirectory, gameType);
         if (running)
         {
-            seenGame = true;
+            if (!seenGame)
+            {
+                seenGame = true;
+                form.ShowForGame();
+            }
             if (string.IsNullOrWhiteSpace(TokenStore.Load()?.Token)) _ = EnsureAuthorizationAsync();
         }
         else if (seenGame)
@@ -112,17 +123,12 @@ _ = Task.Run(async () =>
     }
 });
 
-_ = Task.Run(async () =>
-{
-    await Task.Delay(1500);
-    if (string.IsNullOrWhiteSpace(TokenStore.Load()?.Token)) await EnsureAuthorizationAsync();
-});
-
 Application.Run(form);
 
 async Task EnsureAuthorizationAsync()
 {
     if (!string.IsNullOrWhiteSpace(TokenStore.Load()?.Token)) return;
+    if (Interlocked.Exchange(ref authorizationRunning, 1) == 1) return;
     try
     {
         var authorization = await client.StartDeviceAuthorizationAsync();
@@ -130,6 +136,7 @@ async Task EnsureAuthorizationAsync()
         await CompleteAuthorizationAsync(authorization);
     }
     catch { }
+    finally { Interlocked.Exchange(ref authorizationRunning, 0); }
 }
 
 async Task CompleteAuthorizationAsync(DeviceAuthorization authorization)
@@ -143,8 +150,11 @@ async Task CompleteAuthorizationAsync(DeviceAuthorization authorization)
             if (result?.Status == "authorized" && !string.IsNullOrWhiteSpace(result.Token))
             {
                 var connection = await TestRemoteConnectionAsync(result.Token);
-                TokenStore.Save(result.Token, connection.Username, gameType);
-                return;
+                if (connection.Authenticated)
+                {
+                    TokenStore.Save(result.Token, connection.Username, gameType);
+                    return;
+                }
             }
         }
         catch { }
