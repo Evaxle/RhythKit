@@ -25,6 +25,7 @@
     <Compile Include="RhythKitSettingsForm.cs" />
     <Compile Include="SspScoreWatcher.cs" />
     <Compile Include="VulnusConverterLauncher.cs" />
+    <Compile Include="AgentPorts.cs" />
     <Content Include="..\..\rhythkitlogo.ico" Link="rhythkitlogo.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
