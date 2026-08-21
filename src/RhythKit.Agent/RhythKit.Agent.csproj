@@ -9,8 +9,10 @@
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <ApplicationIcon>$(MSBuildProjectDirectory)\..\..\assets\RhythKit.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Content Include="..\..\assets\RhythKit.ico" Link="RhythKit.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
