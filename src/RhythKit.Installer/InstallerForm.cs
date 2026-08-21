@@ -49,6 +49,7 @@ public sealed class InstallerForm : Form
         Controls.Add(buttons);
         Controls.Add(info);
         Controls.Add(pathRow);
+        AutoDetect();
     }
 
     private void SetLogoIcon()
@@ -58,6 +59,37 @@ public sealed class InstallerForm : Form
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         }
         catch { }
+    }
+
+    private void AutoDetect()
+    {
+        var candidates = SteamRhythiaLayout.FindInstalledPaths()
+            .Concat(SteamLibraryDetector.FindSteamLibraryPaths().Select(path => Path.Combine(path, "steamapps", "common", "Rhythia")))
+            .Concat(GetDefaultCandidates())
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var candidate in candidates)
+        {
+            if (GameDetector.Detect(candidate) != RhythiaTarget.Unknown)
+            {
+                gamePath.Text = candidate;
+                Detect();
+                return;
+            }
+        }
+    }
+
+    private static IEnumerable<string> GetDefaultCandidates()
+    {
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        return new[]
+        {
+            Path.Combine(local, "Rhythia"),
+            Path.Combine(programFiles, "Rhythia"),
+            Path.Combine(programFilesX86, "Rhythia")
+        };
     }
 
     private void Browse()
@@ -222,6 +254,39 @@ public sealed class InstallerForm : Form
         psi.ArgumentList.Add("--game-type");
         psi.ArgumentList.Add(target.ToString());
         Process.Start(psi);
+    }
+}
+
+static class SteamLibraryDetector
+{
+    public static IEnumerable<string> FindSteamLibraryPaths()
+    {
+        var roots = new[]
+        {
+            Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam")?.GetValue("SteamPath")?.ToString(),
+            Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam")?.GetValue("InstallPath")?.ToString(),
+            Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Valve\Steam")?.GetValue("InstallPath")?.ToString(),
+            Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Valve\Steam")?.GetValue("InstallPath")?.ToString()
+        };
+
+        foreach (var root in roots.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!))
+        {
+            yield return root;
+            var libraryFile = Path.Combine(root, "steamapps", "libraryfolders.vdf");
+            if (!File.Exists(libraryFile)) continue;
+            foreach (var path in ParseLibraryFolders(libraryFile)) yield return path;
+        }
+    }
+
+    private static IEnumerable<string> ParseLibraryFolders(string path)
+    {
+        foreach (var line in File.ReadLines(path))
+        {
+            var parts = line.Split('"', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length < 2) continue;
+            var value = parts[^1].Replace("\\\\", "\\");
+            if (Directory.Exists(value) && value.Contains(":\\", StringComparison.OrdinalIgnoreCase)) yield return value;
+        }
     }
 }
 
