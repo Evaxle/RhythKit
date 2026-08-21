@@ -68,7 +68,7 @@ public sealed record ScoreSubmission(
     [property: JsonPropertyName("gameVersion")] string? GameVersion = null,
     [property: JsonPropertyName("integrationVersion")] string? IntegrationVersion = null,
     [property: JsonPropertyName("completedAt")] DateTimeOffset? CompletedAt = null,
-    [property: JsonPropertyName("resultQualified")] bool ResultQualified = false);
+    [property: JsonPropertyName("resultQualified")] bool ResultQualified = true);
 
 public sealed record ScoreSubmissionResponse(
     [property: JsonPropertyName("ok")] bool Ok,
