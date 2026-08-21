@@ -13,7 +13,7 @@ public sealed class RhythKitSettingsForm : Form
     private readonly Label gameLabel = new() { AutoSize = true };
     private readonly TextBox serverUrlBox = new() { Width = 420 };
     private readonly Button saveServerButton = new() { Text = "Save Server URL", AutoSize = true };
-    private readonly Button connectButton = new() { Text = "Connect Rhythians", AutoSize = true };
+    private readonly Button reconnectButton = new() { Text = "Reconnect Rhythians", AutoSize = true };
     private readonly Button testButton = new() { Text = "Test Connection", AutoSize = true };
     private readonly Button mapsButton = new() { Text = "Open Maps", AutoSize = true };
     private readonly System.Windows.Forms.Timer timer;
@@ -35,8 +35,8 @@ public sealed class RhythKitSettingsForm : Form
         Visible = false;
         SetLogoIcon();
         gameLabel.Text = $"Game: {DisplayGame(gameType)}";
-        connectButton.Click += async (_, _) => await ConnectAsync();
-        testButton.Click += async (_, _) => await RefreshAsync(true);
+        reconnectButton.Click += async (_, _) => await ReconnectAsync();
+        testButton.Click += async (_, _) => await TestConnectionAsync();
         saveServerButton.Click += async (_, _) => await SaveServerUrlAsync();
         mapsButton.Click += (_, _) => OpenMaps();
         var title = new Label { Text = "RhythKit", AutoSize = true, Font = new Font(Font.FontFamily, 18, FontStyle.Bold) };
@@ -53,7 +53,7 @@ public sealed class RhythKitSettingsForm : Form
         serverRow.Controls.Add(saveServerButton);
         info.Controls.Add(serverRow);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(20, 0, 20, 20) };
-        buttons.Controls.Add(connectButton);
+        buttons.Controls.Add(reconnectButton);
         buttons.Controls.Add(testButton);
         buttons.Controls.Add(mapsButton);
         Controls.Add(buttons);
@@ -128,16 +128,9 @@ public sealed class RhythKitSettingsForm : Form
             using var response = await client.GetAsync("status");
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException();
             var result = await response.Content.ReadFromJsonAsync<StatusResponse>();
-            if (result?.Authenticated == true && !string.IsNullOrWhiteSpace(result.Username))
-            {
-                statusLabel.Text = $"Rhythians: Connected ({result.Username})";
-                connectButton.Visible = false;
-            }
-            else
-            {
-                statusLabel.Text = "Rhythians: Not connected";
-                connectButton.Visible = true;
-            }
+            statusLabel.Text = result?.Authenticated == true && !string.IsNullOrWhiteSpace(result.Username)
+                ? $"Rhythians: Connected ({result.Username})"
+                : "Rhythians: Not connected";
             integrationLabel.Text = result?.IntegrationConnected == true ? "Game integration: Connected" : "Game integration: Not connected";
             mapLabel.Text = result?.MapCaptureReady == true ? $"Map capture: Ready{(string.IsNullOrWhiteSpace(result.MapId) ? string.Empty : $" ({result.MapId})")}" : "Map capture: Not ready";
             if (!string.IsNullOrWhiteSpace(result?.RhythiansServerUrl) && !serverUrlBox.Focused) serverUrlBox.Text = result.RhythiansServerUrl;
@@ -147,20 +140,20 @@ public sealed class RhythKitSettingsForm : Form
             statusLabel.Text = "RhythKit: Starting...";
             integrationLabel.Text = "Game integration: Unknown";
             mapLabel.Text = "Map capture: Unknown";
-            connectButton.Visible = true;
             if (showFailure) MessageBox.Show(this, "RhythKit could not contact its local agent.", "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
-    private async Task ConnectAsync()
+    private async Task ReconnectAsync()
     {
-        connectButton.Enabled = false;
+        reconnectButton.Enabled = false;
         try
         {
             using var response = await client.PostAsync("auth/start", null);
             if (!response.IsSuccessStatusCode)
             {
-                MessageBox.Show(this, "Rhythians authorization could not be started.", "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                var error = await response.Content.ReadAsStringAsync();
+                MessageBox.Show(this, string.IsNullOrWhiteSpace(error) ? "Rhythians authorization could not be started." : error, "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             var result = await response.Content.ReadFromJsonAsync<AuthStartResponse>();
@@ -168,12 +161,28 @@ public sealed class RhythKitSettingsForm : Form
             Process.Start(new ProcessStartInfo { FileName = result.VerificationUrl, UseShellExecute = true });
         }
         catch (Exception exception) { MessageBox.Show(this, exception.Message, "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Error); }
-        finally { connectButton.Enabled = true; await RefreshAsync(false); }
+        finally { reconnectButton.Enabled = true; await RefreshAsync(false); }
+    }
+
+    private async Task TestConnectionAsync()
+    {
+        testButton.Enabled = false;
+        try
+        {
+            using var response = await client.PostAsync("test-connection", null);
+            var result = await response.Content.ReadFromJsonAsync<TestConnectionResponse>();
+            var message = result?.Message ?? (response.IsSuccessStatusCode ? "Connection test passed." : "Connection test failed.");
+            MessageBox.Show(this, message, "RhythKit", MessageBoxButtons.OK, response.IsSuccessStatusCode ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+        catch (Exception exception) { MessageBox.Show(this, exception.Message, "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        finally { testButton.Enabled = true; await RefreshAsync(false); }
     }
 
     private void OpenMaps()
     {
-        var path = gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vulnus", "maps") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "Rhythians", "maps");
+        var path = gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase)
+            ? Path.Combine(gameDirectory, "maps")
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "Rhythians", "maps");
         Directory.CreateDirectory(path);
         Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
     }
@@ -188,4 +197,5 @@ public sealed class RhythKitSettingsForm : Form
     private sealed record StatusResponse(bool Installed, bool Running, bool GameRunning, bool LoggedIn, bool Connected, bool Authenticated, string? Username, string? Game, bool IntegrationConnected, bool MapCaptureReady, string? MapId, string? LastEvent, DateTimeOffset LastSeenAt, string? GameVersion, string? RhythiansServerUrl);
     private sealed record AuthStartResponse(string DeviceCode, string UserCode, string VerificationUrl, int ExpiresIn, string? GameVersion);
     private sealed record SettingsResponse(string ServerUrl, string? Game, string? GameDirectory);
+    private sealed record TestConnectionResponse(bool Ok, bool Authenticated, bool IntegrationConnected, string? Username, string? Message, string? ServerUrl);
 }
