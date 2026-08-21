@@ -7,7 +7,7 @@ namespace RhythKit;
 
 public static class RhythiansMapStore
 {
-    public static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "Rhythians");
+    public static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rhythians");
     public static string MapsRoot => Path.Combine(Root, "maps");
 
     public static void Initialize() => Directory.CreateDirectory(MapsRoot);
@@ -105,16 +105,24 @@ public static class RhythiansMapStore
 
     private static JsonObject? FindCacheMetadata(object map, string title)
     {
-        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "cache", "maps");
-        if (!Directory.Exists(root)) return null;
-        var names = new[] { ReadString(map, "Name"), title }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => Sanitize(x!)).Distinct(StringComparer.OrdinalIgnoreCase);
-        foreach (var name in names)
+        var userFolder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var roots = new[]
         {
-            var directory = Path.Combine(root, name);
-            if (!Directory.Exists(directory)) continue;
-            foreach (var file in Directory.EnumerateFiles(directory, "*.json", SearchOption.TopDirectoryOnly))
+            Path.Combine(userFolder, "Rhythia", "cache", "maps"),
+            Path.Combine(userFolder, "Rhythia", "maps")
+        };
+        var names = new[] { ReadString(map, "Name"), title }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => Sanitize(x!)).Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in roots)
+        {
+            if (!Directory.Exists(root)) continue;
+            foreach (var name in names)
             {
-                try { if (JsonNode.Parse(File.ReadAllText(file)) is JsonObject json) return json; } catch { }
+                var directory = Path.Combine(root, name);
+                if (!Directory.Exists(directory)) continue;
+                foreach (var file in Directory.EnumerateFiles(directory, "*.json", SearchOption.TopDirectoryOnly))
+                {
+                    try { if (JsonNode.Parse(File.ReadAllText(file)) is JsonObject json) return json; } catch { }
+                }
             }
         }
         return null;
