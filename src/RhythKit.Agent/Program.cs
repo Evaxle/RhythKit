@@ -1,11 +1,12 @@
 using System.Diagnostics;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 using System.Windows.Forms;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using RhythKit;
 using RhythKit.Agent;
 
 var gameDirectory = GetArgument("--game-dir");
@@ -17,7 +18,7 @@ builder.WebHost.UseUrls("http://127.0.0.1:45872");
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.SetIsOriginAllowed(origin => origin.StartsWith("https://rhythians.vercel.app", StringComparison.OrdinalIgnoreCase) || origin.StartsWith("https://rhythians.com", StringComparison.OrdinalIgnoreCase)).AllowAnyHeader().AllowAnyMethod()));
 var app = builder.Build();
 app.UseCors();
-var client = RhythiansClient.CreateDefault();
+using var client = new HttpClient { BaseAddress = new Uri("https://rhythians.vercel.app"), Timeout = TimeSpan.FromSeconds(10) };
 var authorizationRunning = 0;
 
 app.MapGet("/status", async () =>
@@ -35,7 +36,7 @@ app.MapPost("/auth/start", async () =>
     if (Interlocked.Exchange(ref authorizationRunning, 1) == 1) return Results.Conflict(new { error = "Authorization is already running." });
     try
     {
-        var authorization = await client.StartDeviceAuthorizationAsync();
+        var authorization = await StartDeviceAuthorizationAsync();
         _ = Task.Run(async () =>
         {
             try { await CompleteAuthorizationAsync(authorization); }
@@ -131,12 +132,19 @@ async Task EnsureAuthorizationAsync()
     if (Interlocked.Exchange(ref authorizationRunning, 1) == 1) return;
     try
     {
-        var authorization = await client.StartDeviceAuthorizationAsync();
+        var authorization = await StartDeviceAuthorizationAsync();
         Process.Start(new ProcessStartInfo { FileName = authorization.VerificationUrl, UseShellExecute = true });
         await CompleteAuthorizationAsync(authorization);
     }
     catch { }
     finally { Interlocked.Exchange(ref authorizationRunning, 0); }
+}
+
+async Task<DeviceAuthorization> StartDeviceAuthorizationAsync()
+{
+    using var response = await client.PostAsJsonAsync("/api/rhythkit/device/start", new { gameVersion = "0.1.0" });
+    response.EnsureSuccessStatusCode();
+    return await response.Content.ReadFromJsonAsync<DeviceAuthorization>() ?? throw new InvalidOperationException("Invalid authorization response.");
 }
 
 async Task CompleteAuthorizationAsync(DeviceAuthorization authorization)
@@ -146,7 +154,10 @@ async Task CompleteAuthorizationAsync(DeviceAuthorization authorization)
     {
         try
         {
-            var result = await client.PollDeviceAuthorizationAsync(authorization.DeviceCode);
+            using var response = await client.PostAsJsonAsync("/api/rhythkit/device/poll", new { deviceCode = authorization.DeviceCode });
+            if ((int)response.StatusCode == 404 || (int)response.StatusCode == 410) return;
+            response.EnsureSuccessStatusCode();
+            var result = await response.Content.ReadFromJsonAsync<DeviceTokenResponse>();
             if (result?.Status == "authorized" && !string.IsNullOrWhiteSpace(result.Token))
             {
                 var connection = await TestRemoteConnectionAsync(result.Token);
@@ -166,8 +177,12 @@ async Task<RemoteConnection> TestRemoteConnectionAsync(string token)
 {
     try
     {
-        var connection = await client.TestConnectionAsync(token);
-        return new RemoteConnection(connection?.Authenticated == true, connection?.Username);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/rhythkit/status");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.SendAsync(request);
+        if (!response.IsSuccessStatusCode) return new RemoteConnection(false, null);
+        var result = await response.Content.ReadFromJsonAsync<RhythiansConnectionResponse>();
+        return new RemoteConnection(result?.Authenticated == true, result?.Username);
     }
     catch
     {
@@ -220,3 +235,16 @@ static bool IsGameRunning(string? gameDirectory, string gameType)
 record RemoteConnection(bool Authenticated, string? Username);
 record LoginPayload(string? Token, string? Username, string? Game);
 record GamePayload(bool Running, string? Game);
+record DeviceAuthorization(
+    [property: JsonPropertyName("deviceCode")] string DeviceCode,
+    [property: JsonPropertyName("userCode")] string UserCode,
+    [property: JsonPropertyName("verificationUrl")] string VerificationUrl,
+    [property: JsonPropertyName("expiresIn")] int ExpiresIn);
+record DeviceTokenResponse(
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("token")] string? Token,
+    [property: JsonPropertyName("installationId")] string? InstallationId);
+record RhythiansConnectionResponse(
+    [property: JsonPropertyName("ok")] bool Ok,
+    [property: JsonPropertyName("authenticated")] bool Authenticated,
+    [property: JsonPropertyName("username")] string? Username);
