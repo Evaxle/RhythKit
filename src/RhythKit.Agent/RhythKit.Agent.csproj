@@ -15,6 +15,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="AgentUiBootstrap.cs" />
     <Compile Include="AgentSettings.cs" />
     <Compile Include="TokenStore.cs" />
     <Compile Include="GameConnectionState.cs" />
