@@ -25,10 +25,23 @@ app.MapGet("/status", async () =>
 {
     var state = TokenStore.Load();
     var gameRunning = IsGameRunning(gameDirectory, gameType);
-    if (string.IsNullOrWhiteSpace(state?.Token)) return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = false, connected = false, authenticated = false, username = (string?)null, game = state?.Game ?? gameType });
+    var game = GameConnectionState.Get();
+    if (string.IsNullOrWhiteSpace(state?.Token))
+        return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = false, connected = false, authenticated = false, username = (string?)null, game = state?.Game ?? gameType, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt });
     var connection = await TestRemoteConnectionAsync(state.Token);
     var connected = gameRunning && connection.Authenticated;
-    return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected, authenticated = connection.Authenticated, username = connection.Username, game = state.Game });
+    return Results.Json(new { installed = true, running = true, gameRunning, loggedIn = connection.Authenticated, connected, authenticated = connection.Authenticated, username = connection.Username, game = state.Game, integrationConnected = game.IntegrationConnected, mapCaptureReady = game.MapCaptureReady, mapId = game.MapId, lastEvent = game.LastEvent, lastSeenAt = game.LastSeenAt });
+});
+
+app.MapGet("/game/status", () => Results.Json(GameConnectionState.Get()));
+
+app.MapPost("/game", async (HttpRequest request) =>
+{
+    var payload = await request.ReadFromJsonAsync<GamePayload>();
+    if (payload == null) return Results.BadRequest(new { error = "Invalid game state." });
+    if (payload.Running) TokenStore.SaveGame(payload.Game ?? gameType);
+    GameConnectionState.Update(new GameConnectionUpdate(payload.Running, payload.IntegrationConnected, payload.MapCaptureReady, payload.Game ?? gameType, payload.GameVersion, payload.MapId, payload.LastEvent));
+    return Results.Ok(GameConnectionState.Get());
 });
 
 app.MapPost("/auth/start", async () =>
@@ -49,13 +62,6 @@ app.MapPost("/auth/start", async () =>
         Interlocked.Exchange(ref authorizationRunning, 0);
         return Results.Problem(exception.Message, statusCode: 502);
     }
-});
-
-app.MapPost("/game", async (HttpRequest request) =>
-{
-    var payload = await request.ReadFromJsonAsync<GamePayload>();
-    if (payload?.Running == true) TokenStore.SaveGame(payload.Game ?? gameType);
-    return Results.Ok();
 });
 
 app.MapPost("/login", async (HttpRequest request) =>
@@ -111,12 +117,14 @@ _ = Task.Run(async () =>
             {
                 seenGame = true;
                 form.ShowForGame();
+                OpenRhythians();
             }
             if (string.IsNullOrWhiteSpace(TokenStore.Load()?.Token)) _ = EnsureAuthorizationAsync();
         }
         else if (seenGame)
         {
             form.CloseFromGameExit();
+            GameConnectionState.Update(new GameConnectionUpdate(false, false, false, gameType, null, null, "GameExited"));
             await Task.Delay(250);
             Environment.Exit(0);
             return;
@@ -191,6 +199,17 @@ async Task<RemoteConnection> TestRemoteConnectionAsync(string token)
     }
 }
 
+void OpenRhythians()
+{
+    try
+    {
+        var state = TokenStore.Load();
+        var url = string.IsNullOrWhiteSpace(state?.Token) ? "https://rhythians.vercel.app" : "https://rhythians.vercel.app/settings";
+        Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+    }
+    catch { }
+}
+
 string? GetArgument(string name)
 {
     var args = Environment.GetCommandLineArgs();
@@ -235,7 +254,7 @@ static bool IsGameRunning(string? gameDirectory, string gameType)
 
 record RemoteConnection(bool Authenticated, string? Username);
 record LoginPayload(string? Token, string? Username, string? Game);
-record GamePayload(bool Running, string? Game);
+record GamePayload(bool Running, bool IntegrationConnected, bool MapCaptureReady, string? Game, string? GameVersion, string? MapId, string? LastEvent);
 record DeviceAuthorization(
     [property: JsonPropertyName("deviceCode")] string DeviceCode,
     [property: JsonPropertyName("userCode")] string UserCode,
