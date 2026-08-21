@@ -39,11 +39,14 @@ internal static class AgentUiBootstrap
     private static async Task WatchGameStartupAsync(int port)
     {
         var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = TimeSpan.FromSeconds(5) };
+        var wasRunning = false;
         for (;;)
         {
             try
             {
-                if (IsGameRunning())
+                var running = IsGameRunning();
+                if (running && !wasRunning) GameConnectionState.AddDebug("GameStarted", $"{DisplayGame(gameType)} detected starting.");
+                if (running)
                 {
                     using var response = await client.GetAsync("status");
                     if (response.IsSuccessStatusCode)
@@ -53,6 +56,7 @@ internal static class AgentUiBootstrap
                         {
                             try
                             {
+                                GameConnectionState.AddDebug("GameLoginCheck", $"{DisplayGame(gameType)} started; checking Rhythians login.");
                                 using var authResponse = await client.PostAsync("auth/start", null);
                                 if (authResponse.IsSuccessStatusCode)
                                 {
@@ -60,6 +64,7 @@ internal static class AgentUiBootstrap
                                     if (authorization != null && !string.IsNullOrWhiteSpace(authorization.VerificationUrl))
                                     {
                                         Process.Start(new ProcessStartInfo { FileName = authorization.VerificationUrl, UseShellExecute = true });
+                                        GameConnectionState.AddDebug("RhythiansLoginOpened", "Rhythians authorization page opened.");
                                         await WaitForAuthorizationAsync(client, authorization.ExpiresIn);
                                     }
                                 }
@@ -68,6 +73,7 @@ internal static class AgentUiBootstrap
                         }
                     }
                 }
+                wasRunning = running;
             }
             catch { }
             await Task.Delay(1000);
@@ -83,16 +89,21 @@ internal static class AgentUiBootstrap
             using var response = await client.GetAsync("status");
             if (!response.IsSuccessStatusCode) continue;
             var status = await response.Content.ReadFromJsonAsync<StatusResponse>();
-            if (status?.Authenticated == true) return;
+            if (status?.Authenticated == true)
+            {
+                GameConnectionState.AddDebug("RhythiansLoginConfirmed", $"Rhythians login confirmed for {status.Username ?? "the current account"}.");
+                return;
+            }
         }
+        GameConnectionState.AddDebug("RhythiansLoginTimeout", "Rhythians login confirmation timed out.");
     }
 
     private static bool IsGameRunning()
     {
-        var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase)
+        var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase) || gameType.Equals("RewriteRhythia", StringComparison.OrdinalIgnoreCase)
             ? new[] { "rhythia", "rhythia.exe" }
             : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)
-                ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe" }
+                ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe", "soundspaceplus", "soundspaceplus.exe" }
                 : gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase)
                     ? new[] { "Vulnus", "Vulnus.exe" }
                     : Array.Empty<string>();
@@ -105,12 +116,7 @@ internal static class AgentUiBootstrap
                     if (names.Any(name => string.Equals(process.ProcessName, Path.GetFileNameWithoutExtension(name), StringComparison.OrdinalIgnoreCase))) return true;
                     if (!string.IsNullOrWhiteSpace(gameDirectory))
                     {
-                        try
-                        {
-                            var path = process.MainModule?.FileName;
-                            if (!string.IsNullOrWhiteSpace(path) && PathsEqualOrChild(path, gameDirectory)) return true;
-                        }
-                        catch { }
+                        try { var path = process.MainModule?.FileName; if (!string.IsNullOrWhiteSpace(path) && PathsEqualOrChild(path, gameDirectory)) return true; } catch { }
                     }
                 }
                 finally { process.Dispose(); }
@@ -119,6 +125,15 @@ internal static class AgentUiBootstrap
         catch { }
         return false;
     }
+
+    private static string DisplayGame(string value) => value switch
+    {
+        "RhythiaSteam" => "Rhythia Steam",
+        "SspNightly" => "Sound Space Plus",
+        "Vulnus" => "Vulnus",
+        "RewriteRhythia" => "Rewrite Rhythia",
+        _ => value
+    };
 
     private static bool PathsEqualOrChild(string filePath, string directory)
     {
