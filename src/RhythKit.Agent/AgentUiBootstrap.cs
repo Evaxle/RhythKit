@@ -38,7 +38,7 @@ internal static class AgentUiBootstrap
 
     private static async Task WatchGameStartupAsync(int port)
     {
-        var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = TimeSpan.FromSeconds(5) };
+        using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = TimeSpan.FromSeconds(5) };
         var wasRunning = false;
         for (;;)
         {
@@ -46,6 +46,15 @@ internal static class AgentUiBootstrap
             {
                 var running = IsGameRunning();
                 if (running && !wasRunning) GameConnectionState.AddDebug("GameStarted", $"{DisplayGame(gameType)} detected starting.");
+                if (!running && wasRunning)
+                {
+                    GameConnectionState.AddDebug("GameExited", $"{DisplayGame(gameType)} exited; stopping the RhythKit Agent.");
+                    form?.CloseFromGameExit();
+                    converterForm?.Close();
+                    await Task.Delay(250);
+                    Environment.Exit(0);
+                    return;
+                }
                 if (running)
                 {
                     using var response = await client.GetAsync("status");
