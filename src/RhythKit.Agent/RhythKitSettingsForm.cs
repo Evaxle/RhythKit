@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Net.Http.Json;
-using System.Text.Json;
 
 namespace RhythKit.Agent;
 
@@ -67,6 +66,18 @@ public sealed class RhythKitSettingsForm : Form
             if (File.Exists(path)) Icon = new Icon(path);
         }
         catch { }
+    }
+
+    public void ShowForGame()
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired)
+        {
+            BeginInvoke(ShowForGame);
+            return;
+        }
+        if (!Visible) Show();
+        Activate();
     }
 
     private async Task RefreshAsync(bool showFailure)
