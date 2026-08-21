@@ -5,20 +5,33 @@ $rhythKitProject = Join-Path $root "src\RhythKit\RhythKit.csproj"
 $installerProject = Join-Path $root "src\RhythKit.Installer\RhythKit.Installer.csproj"
 $agentProject = Join-Path $root "src\RhythKit.Agent\RhythKit.Agent.csproj"
 $uninstallerProject = Join-Path $root "src\RhythKit.Uninstaller\RhythKit.Uninstaller.csproj"
-$rhythKitOutput = Join-Path $root "src\RhythKit\.godot\mono\temp\bin\Release\RhythKit.dll"
 $payloadSource = Join-Path $root "src\RhythKit.Installer\RhythKitPayload.cs"
-$publish = Join-Path $root "dist\win-x64"
+$dist = Join-Path $root "dist"
+$publish = Join-Path $dist "win-x64"
 
-Remove-Item (Join-Path $root "dist") -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $dist -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path $publish -Force | Out-Null
 
+dotnet --version
 dotnet restore $rhythKitProject
 dotnet restore $installerProject
 dotnet restore $agentProject
 dotnet restore $uninstallerProject
 dotnet build $rhythKitProject -c Release --no-restore
 
-if (!(Test-Path $rhythKitOutput)) { throw "RhythKit.dll was not produced at $rhythKitOutput" }
-$base64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($rhythKitOutput))
+$rhythKitOutput = Get-ChildItem -Path (Join-Path $root "src\RhythKit") -Filter "RhythKit.dll" -Recurse -File |
+    Where-Object { $_.FullName -match "[\\/]Release[\\/]" } |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+
+if ($null -eq $rhythKitOutput) {
+    $candidates = Get-ChildItem -Path (Join-Path $root "src\RhythKit") -Filter "RhythKit.dll" -Recurse -File -ErrorAction SilentlyContinue
+    $paths = ($candidates | ForEach-Object FullName) -join [Environment]::NewLine
+    throw "RhythKit.dll was not produced by the Release build.`n$paths"
+}
+
+Write-Host "Using RhythKit payload: $($rhythKitOutput.FullName)"
+$base64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($rhythKitOutput.FullName))
 $source = @"
 namespace RhythKit.Installer;
 
@@ -46,7 +59,9 @@ $outputs = @(
 
 foreach ($output in $outputs) {
     if (!(Test-Path $output)) { throw "Expected executable was not produced: $output" }
-    if ((Get-Item $output).Length -lt 1000000) { throw "Executable is unexpectedly small: $output" }
+    $item = Get-Item $output
+    if ($item.Length -lt 1000000) { throw "Executable is unexpectedly small: $output" }
+    if ($item.Extension -ne ".exe") { throw "Output is not an EXE: $output" }
 }
 
 Write-Host "Built: $($outputs[0])"
