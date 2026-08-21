@@ -63,12 +63,8 @@ public sealed class RhythKitSettingsForm : Form
     {
         try
         {
-            var path = Path.Combine(AppContext.BaseDirectory, "rhythkit logo.png");
-            if (File.Exists(path))
-            {
-                using var bitmap = new Bitmap(path);
-                Icon = Icon.FromHandle(bitmap.GetHicon());
-            }
+            var path = Path.Combine(AppContext.BaseDirectory, "rhythkitlogo.ico");
+            if (File.Exists(path)) Icon = new Icon(path);
         }
         catch { }
     }
