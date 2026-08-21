@@ -55,12 +55,8 @@ public sealed class InstallerForm : Form
     {
         try
         {
-            var path = Path.Combine(AppContext.BaseDirectory, "rhythkit logo.png");
-            if (File.Exists(path))
-            {
-                using var bitmap = new Bitmap(path);
-                Icon = Icon.FromHandle(bitmap.GetHicon());
-            }
+            var path = Path.Combine(AppContext.BaseDirectory, "rhythkitlogo.ico");
+            if (File.Exists(path)) Icon = new Icon(path);
         }
         catch { }
     }
@@ -110,23 +106,24 @@ public sealed class InstallerForm : Form
             var modDirectory = Path.Combine(path, "RhythKit");
             Directory.CreateDirectory(modDirectory);
 
+            var agentPayload = RhythKitAgentPayload.Data;
+            var uninstallerPayload = RhythKitUninstallerPayload.Data;
+            if (agentPayload.Length == 0) throw new InvalidOperationException("The installer was not built with the RhythKit Agent payload. Run the build script again.");
+            if (uninstallerPayload.Length == 0) throw new InvalidOperationException("The installer was not built with the RhythKit Uninstaller payload. Run the build script again.");
+
             string? hash = null;
             if (target == RhythiaTarget.LegacyManaged)
             {
                 var payload = RhythKitPayload.Data;
-                if (payload.Length == 0) throw new InvalidOperationException("The installer was not built with the RhythKit payload. Run build.ps1.");
+                if (payload.Length == 0) throw new InvalidOperationException("The installer was not built with the RhythKit payload. Run the build script again.");
                 hash = Convert.ToHexString(SHA256.HashData(payload));
                 await File.WriteAllBytesAsync(Path.Combine(modDirectory, "RhythKit.dll"), payload);
             }
 
-            var agentSource = Path.Combine(AppContext.BaseDirectory, "RhythKit.Agent.exe");
-            var uninstallerSource = Path.Combine(AppContext.BaseDirectory, "RhythKit.Uninstaller.exe");
-            if (!File.Exists(agentSource)) throw new FileNotFoundException("RhythKit.Agent.exe was not found beside the installer. Rebuild with build.ps1.");
-            if (!File.Exists(uninstallerSource)) throw new FileNotFoundException("RhythKit.Uninstaller.exe was not found beside the installer. Rebuild with build.ps1.");
             var agentPath = Path.Combine(modDirectory, "RhythKit.Agent.exe");
             var uninstallerPath = Path.Combine(modDirectory, "RhythKit.Uninstaller.exe");
-            File.Copy(agentSource, agentPath, true);
-            File.Copy(uninstallerSource, uninstallerPath, true);
+            await File.WriteAllBytesAsync(agentPath, agentPayload);
+            await File.WriteAllBytesAsync(uninstallerPath, uninstallerPayload);
 
             status.Text = target == RhythiaTarget.LegacyManaged ? "Installing legacy Rhythia integration..." : "Installing RhythKit integration...";
 
@@ -158,7 +155,7 @@ public sealed class InstallerForm : Form
             await File.WriteAllTextAsync(Path.Combine(modDirectory, "manifest.json"), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
             InstallAgentStartup(agentPath, path, target);
             StartAgent(agentPath, path, target);
-            status.Text = $"RhythKit installed for {target}. Uninstaller added to {modDirectory}.";
+            status.Text = $"RhythKit installed for {target}.";
         }
         catch (Exception ex)
         {
