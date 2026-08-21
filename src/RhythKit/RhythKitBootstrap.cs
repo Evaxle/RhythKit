@@ -192,7 +192,7 @@ public static class RhythKitBootstrap
             if (!RhythiansMapStore.Contains(completion.MapId)) return;
 
             var version = RhythiaResultAdapter.GetGameVersion() ?? "unknown";
-            await bridge.ReportEventAsync(new GameEvent(
+            var response = await bridge.ReportEventAsync(new GameEvent(
                 "MapCompleted",
                 true,
                 true,
@@ -209,39 +209,8 @@ public static class RhythKitBootstrap
                 completion.Qualified,
                 completion.CompletedAt));
 
-            var response = await bridge.SubmitScoreAsync(new ScoreSubmission(
-                completion.MapId,
-                completion.ResultId,
-                completion.Accuracy,
-                completion.Misses,
-                completion.Speed,
-                version,
-                "1",
-                completion.CompletedAt,
-                completion.Qualified));
-
-            var message = response.Counted
-                ? "CompletionAwarded"
-                : response.AlreadyCompleted || response.Duplicate
-                    ? "CompletionAlreadyRecorded"
-                    : "ScoreProcessed";
-
-            await bridge.ReportEventAsync(new GameEvent(
-                message,
-                true,
-                true,
-                true,
-                "Rhythia",
-                version,
-                "1",
-                completion.MapId,
-                completion.ResultId,
-                completion.Accuracy,
-                completion.Misses,
-                completion.Speed,
-                completion.Passed,
-                completion.Qualified,
-                completion.CompletedAt));
+            if (response?.LastEvent == "ScoreSubmissionFailed")
+                GD.PrintErr("[RhythKit] Score submission failed.");
         }
         catch (Exception exception)
         {
