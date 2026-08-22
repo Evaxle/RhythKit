@@ -158,6 +158,7 @@ public static class RhythKitBootstrap
     private static double? GetNullableDouble(object? target, string name) => GetValue(target, name) switch { double value => value, float value => value, _ => null };
     private static int? GetNullableInt(object? target, string name) => GetValue(target, name) switch { int value => value, uint value when value <= int.MaxValue => (int)value, _ => null };
 
+#pragma warning disable CA1416
     private static class TokenStore
     {
         private sealed record State(string Token, string? Username, string? Game);
@@ -185,4 +186,5 @@ public static class RhythKitBootstrap
             File.WriteAllBytes(Path, JsonSerializer.SerializeToUtf8Bytes(state));
         }
     }
+#pragma warning restore CA1416
 }
