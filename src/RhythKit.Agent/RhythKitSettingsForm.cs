@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net.NetworkInformation;
 
 namespace RhythKit.Agent;
 
@@ -10,6 +11,7 @@ public sealed class RhythKitSettingsForm : Form
     private readonly string gameDirectory;
     private readonly string gameType;
     private readonly Label statusLabel = new() { AutoSize = true, Text = "Rhythians: Checking..." };
+    private readonly Label networkLabel = new() { AutoSize = true, Text = "Internet: Checking..." };
     private readonly Label databaseLabel = new() { AutoSize = true, Text = "Database: Checking..." };
     private readonly Label integrationLabel = new() { AutoSize = true, Text = "Game integration: Checking..." };
     private readonly Label mapLabel = new() { AutoSize = true, Text = "Map capture: Checking..." };
@@ -29,8 +31,8 @@ public sealed class RhythKitSettingsForm : Form
         client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{AgentPorts.For(gameType)}/") };
         Text = "RhythKit Settings";
         Width = 720;
-        Height = 360;
-        MinimumSize = new Size(720, 360);
+        Height = 400;
+        MinimumSize = new Size(720, 400);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -47,6 +49,7 @@ public sealed class RhythKitSettingsForm : Form
         var info = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(20) };
         info.Controls.Add(title);
         info.Controls.Add(gameLabel);
+        info.Controls.Add(networkLabel);
         info.Controls.Add(statusLabel);
         info.Controls.Add(databaseLabel);
         info.Controls.Add(integrationLabel);
@@ -94,6 +97,9 @@ public sealed class RhythKitSettingsForm : Form
 
     private async Task RefreshAsync(bool showFailure)
     {
+        var networkAvailable = NetworkInterface.GetIsNetworkAvailable();
+        networkLabel.Text = networkAvailable ? "Internet: Connected" : "Internet: Not connected";
+
         try
         {
             using var response = await client.GetAsync("status");
@@ -102,14 +108,14 @@ public sealed class RhythKitSettingsForm : Form
             if (result?.Authenticated == true && !string.IsNullOrWhiteSpace(result.Username))
             {
                 statusLabel.Text = $"Rhythians: Connected ({result.Username})";
-                databaseLabel.Text = "Database: Connected";
+                databaseLabel.Text = networkAvailable ? "Database: Connected" : "Database: Waiting for internet";
                 connectButton.Visible = false;
                 databaseTestButton.Visible = true;
             }
             else
             {
                 statusLabel.Text = "Rhythians: Not connected";
-                databaseLabel.Text = "Database: Not connected";
+                databaseLabel.Text = networkAvailable ? "Database: Not connected" : "Database: Waiting for internet";
                 connectButton.Visible = true;
                 databaseTestButton.Visible = false;
             }
@@ -118,13 +124,13 @@ public sealed class RhythKitSettingsForm : Form
         }
         catch
         {
-            statusLabel.Text = "RhythKit: Starting...";
-            databaseLabel.Text = "Database: Unknown";
+            statusLabel.Text = "Rhythians: Unreachable";
+            databaseLabel.Text = networkAvailable ? "Database: Unreachable" : "Database: Waiting for internet";
             integrationLabel.Text = "Game integration: Unknown";
             mapLabel.Text = "Map capture: Unknown";
             connectButton.Visible = true;
             databaseTestButton.Visible = false;
-            if (showFailure) MessageBox.Show(this, "RhythKit could not contact its local agent.", "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (showFailure) MessageBox.Show(this, networkAvailable ? "RhythKit could not contact Rhythians." : "This computer is not connected to the internet.", "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -174,7 +180,8 @@ public sealed class RhythKitSettingsForm : Form
             }
             using var request = new HttpRequestMessage(HttpMethod.Post, $"{RhythiansUrl}/api/rhythkit/test-database");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", state.Token);
-            using var response = await new HttpClient { Timeout = TimeSpan.FromSeconds(10) }.SendAsync(request);
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            using var response = await http.SendAsync(request);
             var body = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode)
             {
