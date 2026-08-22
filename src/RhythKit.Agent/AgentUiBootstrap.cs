@@ -14,6 +14,7 @@ internal static class AgentUiBootstrap
     private static RhythKitSettingsForm? form;
     private static VulnusConverterForm? converterForm;
     private static int authorizationRunning;
+    private static readonly CancellationTokenSource cancellation = new();
 
     [ModuleInitializer]
     internal static void Initialize()
@@ -25,50 +26,40 @@ internal static class AgentUiBootstrap
         var uiThread = new Thread(() =>
         {
             form = new RhythKitSettingsForm(gameDirectory ?? string.Empty, gameType);
-            if (IsGameRunning())
-            {
-                form.ShowForGame();
-                if (gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase))
-                {
-                    converterForm = new VulnusConverterForm();
-                    converterForm.Show();
-                }
-            }
+            if (IsGameRunning()) ShowGameUi();
             Application.Run(form);
         });
         uiThread.IsBackground = true;
         uiThread.SetApartmentState(ApartmentState.STA);
         uiThread.Start();
         _ = Task.Run(() => WatchGameStartupAsync(port));
+        if (gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)) _ = Task.Run(() => new SspScoreWatcher(gameDirectory, cancellation.Token).RunAsync());
     }
 
     private static async Task WatchGameStartupAsync(int port)
     {
         using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = TimeSpan.FromSeconds(5) };
         var wasRunning = IsGameRunning();
-
-        for (;;)
+        while (!cancellation.IsCancellationRequested)
         {
             try
             {
                 var running = IsGameRunning();
-
                 if (running && !wasRunning)
                 {
                     GameConnectionState.AddDebug("GameStarted", $"{DisplayGame(gameType)} detected starting at {gameExecutable ?? "the configured executable"}.");
                     ShowGameUi();
                 }
-
                 if (!running && wasRunning)
                 {
                     GameConnectionState.Update(new GameConnectionUpdate(false, false, false, gameType, null, null, "GameStopped"));
                     GameConnectionState.AddDebug("GameStopped", $"{DisplayGame(gameType)} closed; RhythKit Agent is stopping.");
+                    cancellation.Cancel();
                     CloseGameUi();
                     await Task.Delay(500);
                     Environment.Exit(0);
                     return;
                 }
-
                 if (running)
                 {
                     using var response = await client.GetAsync("status");
@@ -79,7 +70,6 @@ internal static class AgentUiBootstrap
                         {
                             try
                             {
-                                GameConnectionState.AddDebug("GameLoginCheck", $"{DisplayGame(gameType)} started; checking Rhythians login.");
                                 using var authResponse = await client.PostAsync("auth/start", null);
                                 if (authResponse.IsSuccessStatusCode)
                                 {
@@ -87,7 +77,6 @@ internal static class AgentUiBootstrap
                                     if (authorization != null && !string.IsNullOrWhiteSpace(authorization.VerificationUrl))
                                     {
                                         Process.Start(new ProcessStartInfo { FileName = authorization.VerificationUrl, UseShellExecute = true });
-                                        GameConnectionState.AddDebug("RhythiansLoginOpened", "Rhythians authorization page opened.");
                                         await WaitForAuthorizationAsync(client, authorization.ExpiresIn);
                                     }
                                 }
@@ -96,24 +85,17 @@ internal static class AgentUiBootstrap
                         }
                     }
                 }
-
                 wasRunning = running;
             }
             catch { }
-
-            await Task.Delay(1000);
+            try { await Task.Delay(1000, cancellation.Token); } catch (OperationCanceledException) { }
         }
     }
 
     private static void ShowGameUi()
     {
         if (form == null || form.IsDisposed) return;
-        if (form.InvokeRequired)
-        {
-            form.BeginInvoke(ShowGameUi);
-            return;
-        }
-
+        if (form.InvokeRequired) { form.BeginInvoke(ShowGameUi); return; }
         form.ShowForGame();
         if (gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) && (converterForm == null || converterForm.IsDisposed))
         {
@@ -125,12 +107,7 @@ internal static class AgentUiBootstrap
     private static void CloseGameUi()
     {
         if (form == null || form.IsDisposed) return;
-        if (form.InvokeRequired)
-        {
-            form.BeginInvoke(CloseGameUi);
-            return;
-        }
-
+        if (form.InvokeRequired) { form.BeginInvoke(CloseGameUi); return; }
         converterForm?.Close();
         converterForm = null;
         form.CloseFromGameExit();
@@ -139,19 +116,14 @@ internal static class AgentUiBootstrap
     private static async Task WaitForAuthorizationAsync(HttpClient client, int expiresIn)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(Math.Max(30, expiresIn));
-        while (DateTimeOffset.UtcNow < deadline)
+        while (DateTimeOffset.UtcNow < deadline && !cancellation.IsCancellationRequested)
         {
             await Task.Delay(2000);
             using var response = await client.GetAsync("status");
             if (!response.IsSuccessStatusCode) continue;
             var status = await response.Content.ReadFromJsonAsync<StatusResponse>();
-            if (status?.Authenticated == true)
-            {
-                GameConnectionState.AddDebug("RhythiansLoginConfirmed", $"Rhythians login confirmed for {status.Username ?? "the current account"} ({status.UserId ?? "unknown user"}).");
-                return;
-            }
+            if (status?.Authenticated == true) return;
         }
-        GameConnectionState.AddDebug("RhythiansLoginTimeout", "Rhythians login confirmation timed out.");
     }
 
     private static bool IsGameRunning()
@@ -173,22 +145,10 @@ internal static class AgentUiBootstrap
                 }
                 return false;
             }
-
-            var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase) || gameType.Equals("RewriteRhythia", StringComparison.OrdinalIgnoreCase)
-                ? new[] { "rhythia" }
-                : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)
-                    ? new[] { "sound-space-plus", "Sound Space Plus", "SSP", "soundspaceplus", "SoundSpacePlus" }
-                    : gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase)
-                        ? new[] { "Vulnus" }
-                        : Array.Empty<string>();
-            foreach (var process in Process.GetProcessesByName(names.FirstOrDefault() ?? string.Empty))
-            {
-                process.Dispose();
-                return true;
-            }
+            var name = gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase) ? "soundspaceplus" : gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) ? "Vulnus" : "rhythia";
+            return Process.GetProcessesByName(name).Length > 0;
         }
-        catch { }
-        return false;
+        catch { return false; }
     }
 
     private static string? LoadManifestExecutable(string? directory)
