@@ -11,6 +11,7 @@ public sealed class RhythKitSettingsForm : Form
     private readonly string gameDirectory;
     private readonly string gameType;
     private readonly Label statusLabel = new() { AutoSize = true, Text = "Rhythians: Checking..." };
+    private readonly Label accountLabel = new() { AutoSize = true, Text = "Account ID: Checking..." };
     private readonly Label networkLabel = new() { AutoSize = true, Text = "Internet: Checking..." };
     private readonly Label databaseLabel = new() { AutoSize = true, Text = "Database: Checking..." };
     private readonly Label integrationLabel = new() { AutoSize = true, Text = "Game integration: Checking..." };
@@ -31,8 +32,8 @@ public sealed class RhythKitSettingsForm : Form
         client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{AgentPorts.For(gameType)}/") };
         Text = "RhythKit Settings";
         Width = 720;
-        Height = 400;
-        MinimumSize = new Size(720, 400);
+        Height = 430;
+        MinimumSize = new Size(720, 430);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -51,6 +52,7 @@ public sealed class RhythKitSettingsForm : Form
         info.Controls.Add(gameLabel);
         info.Controls.Add(networkLabel);
         info.Controls.Add(statusLabel);
+        info.Controls.Add(accountLabel);
         info.Controls.Add(databaseLabel);
         info.Controls.Add(integrationLabel);
         info.Controls.Add(mapLabel);
@@ -108,6 +110,7 @@ public sealed class RhythKitSettingsForm : Form
             if (result?.Authenticated == true && !string.IsNullOrWhiteSpace(result.Username))
             {
                 statusLabel.Text = $"Rhythians: Connected ({result.Username})";
+                accountLabel.Text = $"Account ID: {result.UserId ?? "Unknown"}";
                 databaseLabel.Text = networkAvailable ? "Database: Connected" : "Database: Waiting for internet";
                 connectButton.Visible = false;
                 databaseTestButton.Visible = true;
@@ -115,6 +118,7 @@ public sealed class RhythKitSettingsForm : Form
             else
             {
                 statusLabel.Text = "Rhythians: Not connected";
+                accountLabel.Text = "Account ID: Not linked";
                 databaseLabel.Text = networkAvailable ? "Database: Not connected" : "Database: Waiting for internet";
                 connectButton.Visible = true;
                 databaseTestButton.Visible = false;
@@ -125,6 +129,7 @@ public sealed class RhythKitSettingsForm : Form
         catch
         {
             statusLabel.Text = "Rhythians: Unreachable";
+            accountLabel.Text = "Account ID: Unknown";
             databaseLabel.Text = networkAvailable ? "Database: Unreachable" : "Database: Waiting for internet";
             integrationLabel.Text = "Game integration: Unknown";
             mapLabel.Text = "Map capture: Unknown";
@@ -159,6 +164,7 @@ public sealed class RhythKitSettingsForm : Form
         {
             TokenStore.Clear();
             statusLabel.Text = "Rhythians: Not connected";
+            accountLabel.Text = "Account ID: Not linked";
             databaseLabel.Text = "Database: Not connected";
             connectButton.Visible = true;
             var url = $"{RhythiansUrl}/settings?rhythkitReconnect=1&game={Uri.EscapeDataString(gameType)}";
@@ -209,6 +215,6 @@ public sealed class RhythKitSettingsForm : Form
         Close();
     }
 
-    private sealed record StatusResponse(bool Installed, bool Running, bool GameRunning, bool LoggedIn, bool Connected, bool Authenticated, string? Username, string? Game, bool IntegrationConnected, bool MapCaptureReady, string? MapId, string? LastEvent, DateTimeOffset LastSeenAt, string? GameVersion, string? RhythiansServerUrl);
+    private sealed record StatusResponse(bool Installed, bool Running, bool GameRunning, bool LoggedIn, bool Connected, bool Authenticated, string? Username, string? UserId, string? Game, bool IntegrationConnected, bool MapCaptureReady, string? MapId, string? LastEvent, DateTimeOffset LastSeenAt, string? GameVersion, string? RhythiansServerUrl);
     private sealed record AuthStartResponse(string DeviceCode, string UserCode, string VerificationUrl, int ExpiresIn, string? GameVersion);
 }
