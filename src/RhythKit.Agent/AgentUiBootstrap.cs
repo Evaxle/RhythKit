@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace RhythKit.Agent;
@@ -8,24 +9,24 @@ namespace RhythKit.Agent;
 internal static class AgentUiBootstrap
 {
     private static string? gameDirectory;
+    private static string? gameExecutable;
     private static string gameType = "unknown";
     private static RhythKitSettingsForm? form;
     private static VulnusConverterForm? converterForm;
     private static int authorizationRunning;
-    private static bool gameWasRunning;
 
     [ModuleInitializer]
     internal static void Initialize()
     {
         gameDirectory = GetArgument("--game-dir");
         gameType = GetArgument("--game-type") ?? "unknown";
+        gameExecutable = GetArgument("--game-exe") ?? LoadManifestExecutable(gameDirectory);
         var port = AgentPorts.For(gameType);
         var uiThread = new Thread(() =>
         {
             form = new RhythKitSettingsForm(gameDirectory ?? string.Empty, gameType);
             if (IsGameRunning())
             {
-                gameWasRunning = true;
                 form.ShowForGame();
                 if (gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase))
                 {
@@ -45,7 +46,6 @@ internal static class AgentUiBootstrap
     {
         using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = TimeSpan.FromSeconds(5) };
         var wasRunning = IsGameRunning();
-        gameWasRunning = wasRunning;
 
         for (;;)
         {
@@ -55,14 +55,12 @@ internal static class AgentUiBootstrap
 
                 if (running && !wasRunning)
                 {
-                    gameWasRunning = true;
-                    GameConnectionState.AddDebug("GameStarted", $"{DisplayGame(gameType)} detected starting.");
+                    GameConnectionState.AddDebug("GameStarted", $"{DisplayGame(gameType)} detected starting at {gameExecutable ?? "the configured executable"}.");
                     ShowGameUi();
                 }
 
                 if (!running && wasRunning)
                 {
-                    gameWasRunning = false;
                     GameConnectionState.Update(new GameConnectionUpdate(false, false, false, gameType, null, null, "GameStopped"));
                     GameConnectionState.AddDebug("GameStopped", $"{DisplayGame(gameType)} closed; RhythKit Agent is stopping.");
                     CloseGameUi();
@@ -149,7 +147,7 @@ internal static class AgentUiBootstrap
             var status = await response.Content.ReadFromJsonAsync<StatusResponse>();
             if (status?.Authenticated == true)
             {
-                GameConnectionState.AddDebug("RhythiansLoginConfirmed", $"Rhythians login confirmed for {status.Username ?? "the current account"}.");
+                GameConnectionState.AddDebug("RhythiansLoginConfirmed", $"Rhythians login confirmed for {status.Username ?? "the current account"} ({status.UserId ?? "unknown user"}).");
                 return;
             }
         }
@@ -158,35 +156,54 @@ internal static class AgentUiBootstrap
 
     private static bool IsGameRunning()
     {
-        var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase) || gameType.Equals("RewriteRhythia", StringComparison.OrdinalIgnoreCase)
-            ? new[] { "rhythia", "rhythia.exe" }
-            : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)
-                ? new[] { "sound-space-plus", "sound-space-plus.exe", "Sound Space Plus", "Sound Space Plus.exe", "SSP", "SSP.exe", "soundspaceplus", "soundspaceplus.exe", "SoundSpacePlus", "SoundSpacePlus.exe" }
-                : gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase)
-                    ? new[] { "Vulnus", "Vulnus.exe" }
-                    : Array.Empty<string>();
         try
         {
-            foreach (var process in Process.GetProcesses())
+            if (!string.IsNullOrWhiteSpace(gameExecutable) && File.Exists(gameExecutable))
             {
-                try
+                var expected = Path.GetFullPath(gameExecutable).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                foreach (var process in Process.GetProcesses())
                 {
-                    if (names.Any(name => string.Equals(process.ProcessName, Path.GetFileNameWithoutExtension(name), StringComparison.OrdinalIgnoreCase))) return true;
-                    if (!string.IsNullOrWhiteSpace(gameDirectory))
+                    try
                     {
-                        try
-                        {
-                            var path = process.MainModule?.FileName;
-                            if (!string.IsNullOrWhiteSpace(path) && PathsEqualOrChild(path, gameDirectory)) return true;
-                        }
-                        catch { }
+                        var path = process.MainModule?.FileName;
+                        if (!string.IsNullOrWhiteSpace(path) && string.Equals(Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), expected, StringComparison.OrdinalIgnoreCase)) return true;
                     }
+                    catch { }
+                    finally { process.Dispose(); }
                 }
-                finally { process.Dispose(); }
+                return false;
+            }
+
+            var names = gameType.Equals("RhythiaSteam", StringComparison.OrdinalIgnoreCase) || gameType.Equals("Rhythia", StringComparison.OrdinalIgnoreCase) || gameType.Equals("RewriteRhythia", StringComparison.OrdinalIgnoreCase)
+                ? new[] { "rhythia" }
+                : gameType.Equals("SspNightly", StringComparison.OrdinalIgnoreCase)
+                    ? new[] { "sound-space-plus", "Sound Space Plus", "SSP", "soundspaceplus", "SoundSpacePlus" }
+                    : gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase)
+                        ? new[] { "Vulnus" }
+                        : Array.Empty<string>();
+            foreach (var process in Process.GetProcessesByName(names.FirstOrDefault() ?? string.Empty))
+            {
+                process.Dispose();
+                return true;
             }
         }
         catch { }
         return false;
+    }
+
+    private static string? LoadManifestExecutable(string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory)) return null;
+        try
+        {
+            var manifestPath = Path.Combine(directory, "RhythKit", "manifest.json");
+            if (!File.Exists(manifestPath)) return null;
+            using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            if (!document.RootElement.TryGetProperty("executable", out var executable)) return null;
+            var value = executable.GetString();
+            return string.IsNullOrWhiteSpace(value) ? null : Path.GetFullPath(value);
+        }
+        catch { return null; }
     }
 
     private static string DisplayGame(string value) => value switch
@@ -198,17 +215,6 @@ internal static class AgentUiBootstrap
         _ => value
     };
 
-    private static bool PathsEqualOrChild(string filePath, string directory)
-    {
-        try
-        {
-            var file = Path.GetFullPath(filePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var root = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            return string.Equals(file, root, StringComparison.OrdinalIgnoreCase) || file.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-        }
-        catch { return false; }
-    }
-
     private static string? GetArgument(string name)
     {
         var args = Environment.GetCommandLineArgs();
@@ -216,6 +222,6 @@ internal static class AgentUiBootstrap
         return null;
     }
 
-    private sealed record StatusResponse(bool Installed, bool Running, bool GameRunning, bool LoggedIn, bool Connected, bool Authenticated, string? Username, string? Game, bool IntegrationConnected, bool MapCaptureReady, string? MapId, string? LastEvent, DateTimeOffset LastSeenAt);
+    private sealed record StatusResponse(bool Installed, bool Running, bool GameRunning, bool LoggedIn, bool Connected, bool Authenticated, string? Username, string? UserId, string? Game, bool IntegrationConnected, bool MapCaptureReady, string? MapId, string? LastEvent, DateTimeOffset LastSeenAt);
     private sealed record AuthStartResponse(string DeviceCode, string UserCode, string VerificationUrl, int ExpiresIn, string? GameVersion);
 }
