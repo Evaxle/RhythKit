@@ -101,28 +101,18 @@ public sealed class RhythKitSettingsForm : Form
     {
         var networkAvailable = NetworkInterface.GetIsNetworkAvailable();
         networkLabel.Text = networkAvailable ? "Internet: Connected" : "Internet: Not connected";
-
         try
         {
             using var response = await client.GetAsync("status");
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException();
             var result = await response.Content.ReadFromJsonAsync<StatusResponse>();
-            if (result?.Authenticated == true && !string.IsNullOrWhiteSpace(result.Username))
-            {
-                statusLabel.Text = $"Rhythians: Connected ({result.Username})";
-                accountLabel.Text = $"Account ID: {result.UserId ?? "Unknown"}";
-                databaseLabel.Text = networkAvailable ? "Database: Connected" : "Database: Waiting for internet";
-                connectButton.Visible = false;
-                databaseTestButton.Visible = true;
-            }
-            else
-            {
-                statusLabel.Text = "Rhythians: Not connected";
-                accountLabel.Text = "Account ID: Not linked";
-                databaseLabel.Text = networkAvailable ? "Database: Not connected" : "Database: Waiting for internet";
-                connectButton.Visible = true;
-                databaseTestButton.Visible = false;
-            }
+            var authenticated = result?.Authenticated == true;
+            statusLabel.Text = authenticated ? $"Rhythians: Connected ({result!.Username ?? "Account"})" : "Rhythians: Not connected";
+            accountLabel.Text = authenticated ? $"Account ID: {result!.UserId ?? "Unknown"}" : "Account ID: Not linked";
+            databaseLabel.Text = authenticated && networkAvailable ? "Database: Connected" : networkAvailable ? "Database: Login required" : "Database: Waiting for internet";
+            connectButton.Visible = !authenticated;
+            reconnectButton.Visible = authenticated;
+            databaseTestButton.Visible = true;
             integrationLabel.Text = result?.IntegrationConnected == true ? "Game integration: Connected" : "Game integration: Not connected";
             mapLabel.Text = result?.MapCaptureReady == true ? $"Map capture: Ready{(string.IsNullOrWhiteSpace(result.MapId) ? string.Empty : $" ({result.MapId})")}" : "Map capture: Not ready";
         }
@@ -134,7 +124,8 @@ public sealed class RhythKitSettingsForm : Form
             integrationLabel.Text = "Game integration: Unknown";
             mapLabel.Text = "Map capture: Unknown";
             connectButton.Visible = true;
-            databaseTestButton.Visible = false;
+            reconnectButton.Visible = true;
+            databaseTestButton.Visible = true;
             if (showFailure) MessageBox.Show(this, networkAvailable ? "RhythKit could not contact Rhythians." : "This computer is not connected to the internet.", "RhythKit", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
@@ -165,7 +156,7 @@ public sealed class RhythKitSettingsForm : Form
             TokenStore.Clear();
             statusLabel.Text = "Rhythians: Not connected";
             accountLabel.Text = "Account ID: Not linked";
-            databaseLabel.Text = "Database: Not connected";
+            databaseLabel.Text = "Database: Login required";
             connectButton.Visible = true;
             var url = $"{RhythiansUrl}/settings?rhythkitReconnect=1&game={Uri.EscapeDataString(gameType)}";
             Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
@@ -203,7 +194,7 @@ public sealed class RhythKitSettingsForm : Form
 
     private void OpenMaps()
     {
-        var path = gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vulnus", "maps") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CapoRhythia", "Rhythians", "maps");
+        var path = gameType.Equals("Vulnus", StringComparison.OrdinalIgnoreCase) ? Path.Combine(gameDirectory, "maps") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rhythians", "maps");
         Directory.CreateDirectory(path);
         Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
     }
